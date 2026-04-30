@@ -23,7 +23,8 @@ import {
   Database,
   Menu,
   Settings2,
-  MoreVertical
+  MoreVertical,
+  Edit3
 } from 'lucide-react';
 import { auth, db, signInWithGoogle } from './lib/firebase';
 import { 
@@ -40,6 +41,7 @@ import {
   serverTimestamp, 
   doc, 
   deleteDoc,
+  updateDoc,
   Timestamp 
 } from 'firebase/firestore';
 
@@ -92,6 +94,52 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 
 // --- Constants ---
 
+const RISALE_SECTIONS = [
+  { 
+    id: 'sozler', 
+    title: 'Sözler', 
+    sub: 'The Words', 
+    color: 'bg-emerald-500',
+    items: [
+      { id: 'first-word', title: 'Birinci Söz', detail: 'The First Word' },
+      { id: 'second-word', title: 'İkinci Söz', detail: 'The Second Word' },
+      { id: 'third-word', title: 'Üçüncü Söz', detail: 'The Third Word' },
+      { id: 'tenth-word', title: 'Onuncu Söz', detail: 'The Tenth Word' },
+      { id: 'thirty-second-word', title: 'Otuz İkinci Söz', detail: 'The Thirty-Second Word' }
+    ]
+  },
+  { 
+    id: 'mektubat', 
+    title: 'Mektubat', 
+    sub: 'The Letters', 
+    color: 'bg-indigo-500',
+    items: [
+      { id: 'first-letter', title: 'Birinci Mektup', detail: 'The First Letter' },
+      { id: 'nineteenth-letter', title: 'On Dokuzuncu Mektup', detail: 'The Miracle of Prophet' }
+    ]
+  },
+  { 
+    id: 'lemalar', 
+    title: 'Lem\'alar', 
+    sub: 'The Flashes', 
+    color: 'bg-amber-500',
+    items: [
+      { id: 'first-flash', title: 'Birinci Lem\'a', detail: 'The First Flash' },
+      { id: 'twenty-fifth-flash', title: 'Yirmi Beşinci Lem\'a', detail: 'Sick Persons Flash' }
+    ]
+  },
+  { 
+    id: 'sualar', 
+    title: 'Şualar', 
+    sub: 'The Rays', 
+    color: 'bg-rose-500',
+    items: [
+      { id: 'first-ray', title: 'Birinci Şua', detail: 'The First Ray' },
+      { id: 'seventh-ray', title: 'Yedinci Şua', detail: 'The Supreme Sign' }
+    ]
+  },
+];
+
 const DEFAULT_SENTENCES_MOCK: any[] = [
   {
     ottoman: ["بو", "کتاب", "چوق", "گوزل", "در"],
@@ -139,6 +187,12 @@ export default function App() {
   const [showCMS, setShowCMS] = useState(false);
   const [showSavedToast, setShowSavedToast] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [showSettingsSheet, setShowSettingsSheet] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const [activeBookItem, setActiveBookItem] = useState<{ bookId: string; itemId: string } | null>({ bookId: 'sozler', itemId: 'first-word' });
+  const [editingEntry, setEditingEntry] = useState<Sentence | null>(null);
+  const [activeMenu, setActiveMenu] = useState<string | null>(null);
   
   // Interaction State
   const [activeHighlight, setActiveHighlight] = useState<{ sentenceId: string; lang: Language; index: number } | null>(null);
@@ -230,7 +284,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100 pb-20" onClick={() => setActiveHighlight(null)}>
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100 pb-20" onClick={() => { setActiveHighlight(null); setShowUserMenu(false); }}>
       {/* Top Header */}
       <header className="sticky top-0 z-50 w-full bg-white/80 backdrop-blur-md border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -243,74 +297,112 @@ export default function App() {
               <Menu className="w-6 h-6" />
             </button>
             <div className="hidden sm:block w-px h-6 bg-slate-200 mx-1" />
-            <div className="cursor-pointer" onClick={() => setCurrentPage(0)}>
-              <h1 className="text-lg font-black tracking-tight text-slate-900 leading-none">Ya Hakeem</h1>
+            <div className="cursor-pointer" onClick={() => { setCurrentPage(0); setActiveBookItem({ bookId: 'sozler', itemId: 'first-word' }); }}>
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg font-black tracking-tight text-slate-900 leading-none">Ya Hakeem</h1>
+                {activeBookItem && (
+                  <div className="hidden lg:flex items-center gap-2 px-2 py-0.5 bg-slate-50 rounded-full border border-slate-200">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">
+                      {RISALE_SECTIONS.find(s => s.id === activeBookItem.bookId)?.title}
+                    </span>
+                    <ChevronRight className="w-2.5 h-2.5 text-slate-300" />
+                    <span className="text-[9px] font-black text-emerald-600 uppercase tracking-tighter">
+                      {RISALE_SECTIONS.find(s => s.id === activeBookItem.bookId)?.items.find(i => i.id === activeBookItem.itemId)?.title}
+                    </span>
+                  </div>
+                )}
+              </div>
               <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mt-0.5">Risale-i Nur</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-6">
-            {/* Desktop Toolbar */}
-            <div className="hidden lg:flex items-center gap-2 pr-6 border-r border-slate-200">
+          <div className="flex items-center gap-1 sm:gap-4">
+            {/* Desktop Toolbar - Compact for Tablet */}
+            <div className="hidden md:flex items-center gap-1.5 pr-4 border-r border-slate-200">
                <div className="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200">
                   <button 
                     onClick={() => setLayoutMode('side-by-side')}
-                    className={`p-1.5 rounded-md transition-all ${layoutMode === 'side-by-side' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+                    className={`p-1 rounded-md transition-all ${layoutMode === 'side-by-side' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
                     title="Parallel Mode"
                   >
-                    <LayoutGrid className="w-4 h-4" />
+                    <LayoutGrid className="w-3.5 h-3.5" />
                   </button>
                   <button 
                     onClick={() => setLayoutMode('stacked')}
-                    className={`p-1.5 rounded-md transition-all ${layoutMode === 'stacked' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+                    className={`p-1 rounded-md transition-all ${layoutMode === 'stacked' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
                     title="Vertical Mode"
                   >
-                    <LayoutList className="w-4 h-4" />
+                    <LayoutList className="w-3.5 h-3.5" />
                   </button>
                </div>
 
-               <div className="flex items-center gap-1.5">
+               <div className="flex items-center gap-1">
                  {(['ottoman', 'sorani', 'turkish'] as Language[]).map(l => (
                    <button
                     key={l}
                     onClick={() => toggleLang(l)}
-                    className={`px-2.5 py-1 text-[10px] font-black uppercase rounded-md border transition-all ${
+                    className={`px-1.5 py-0.5 text-[9px] font-black uppercase rounded border transition-all ${
                       visibleLangs.includes(l) 
                         ? `${l === 'ottoman' ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : l === 'sorani' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'}` 
                         : 'bg-white border-slate-200 text-slate-300'
                     }`}
                    >
-                    {l}
+                    {l.slice(0,3)}
                    </button>
                  ))}
                </div>
             </div>
 
             {/* Mobile/Compact Actions */}
-            <div className="flex lg:hidden items-center gap-1">
+            <div className="flex md:hidden items-center gap-1">
               <button 
-                onClick={(e) => { e.stopPropagation(); setShowMobileMenu(true); }}
-                className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"
+                onClick={(e) => { e.stopPropagation(); setShowSettingsSheet(true); }}
+                className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg"
               >
                 <Settings2 className="w-5 h-5" />
               </button>
             </div>
 
             {/* Auth */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               {user ? (
-                <div className="flex items-center gap-3 bg-slate-50 pl-2 sm:pl-3 pr-1 py-1 rounded-full border border-slate-200">
-                  <span className="hidden md:block text-[10px] font-black text-slate-500 uppercase tracking-tighter truncate max-w-[80px]">{user.displayName?.split(' ')[0]}</span>
-                  <img src={user.photoURL || ''} alt="" className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-white shadow-sm" />
-                  <button onClick={() => signOut(auth)} className="p-1.5 sm:p-2 hover:bg-slate-200 rounded-full text-slate-400"><LogOut className="w-3.5 h-3.5" /></button>
+                <div className="relative">
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setShowUserMenu(!showUserMenu); }}
+                    className="flex items-center gap-2 bg-slate-50 pl-1 pr-2 py-1 rounded-full border border-slate-200 hover:border-slate-300 transition-colors"
+                  >
+                    <img src={user.photoURL || ''} alt="" className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-white shadow-sm" />
+                    <span className="hidden sm:block text-[10px] font-black text-slate-600 uppercase tracking-tighter truncate max-w-[60px]">{user.displayName?.split(' ')[0]}</span>
+                  </button>
+                  
+                  <AnimatePresence>
+                    {showUserMenu && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                        className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden py-1"
+                      >
+                        <div className="px-4 py-3 border-b border-slate-50 mb-1">
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Signed in as</p>
+                          <p className="text-xs font-bold text-slate-900 truncate">{user.email}</p>
+                        </div>
+                        <button 
+                          onClick={() => signOut(auth)}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-xs font-bold text-rose-500 hover:bg-rose-50 transition-colors"
+                        >
+                          <LogOut className="w-4 h-4" /> Sign Out
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               ) : (
                 <button 
                   onClick={signInWithGoogle}
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-full text-xs font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100"
+                  className="px-5 py-2 bg-emerald-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100"
                 >
-                  <LogIn className="w-3.5 h-3.5" />
-                  <span className="hidden xs:inline">Sign In</span>
+                  Login
                 </button>
               )}
             </div>
@@ -347,47 +439,63 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="flex-1 p-6 space-y-8">
+              <div className="flex-1 overflow-y-auto p-4 space-y-6">
                 <section>
-                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-4">View Mode</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button 
-                      onClick={() => setLayoutMode('side-by-side')}
-                      className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-all ${layoutMode === 'side-by-side' ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-400'}`}
-                    >
-                      <LayoutGrid className="w-6 h-6" />
-                      <span className="text-[10px] font-bold uppercase">Parallel</span>
-                    </button>
-                    <button 
-                      onClick={() => setLayoutMode('stacked')}
-                      className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-all ${layoutMode === 'stacked' ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-400'}`}
-                    >
-                      <LayoutList className="w-6 h-6" />
-                      <span className="text-[10px] font-bold uppercase">Vertical</span>
-                    </button>
-                  </div>
-                </section>
-
-                <section>
-                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-4">Active Corpuses</label>
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-4 px-2">Risale-i Nur Collection</label>
                   <div className="space-y-2">
-                    {(['ottoman', 'sorani', 'turkish'] as Language[]).map(l => (
-                      <button
-                        key={l}
-                        onClick={() => toggleLang(l)}
-                        className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${
-                          visibleLangs.includes(l) 
-                            ? 'border-emerald-600 bg-emerald-50 text-emerald-700' 
-                            : 'border-slate-200 text-slate-400'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-2 h-2 rounded-full ${LANG_META[l].color}`} />
-                          <span className="text-xs font-bold uppercase">{LANG_META[l].label}</span>
+                    {RISALE_SECTIONS.map(s => {
+                      const isExpanded = expandedSection === s.id;
+                      return (
+                        <div key={s.id} className="space-y-1">
+                          <button 
+                            onClick={() => setExpandedSection(isExpanded ? null : s.id)}
+                            className={`w-full flex items-center justify-between p-3 rounded-2xl transition-all text-left ${isExpanded ? 'bg-slate-50' : 'hover:bg-slate-50'}`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`w-1.5 h-6 rounded-full ${s.color} transition-all ${isExpanded ? 'opacity-100' : 'opacity-20 translate-x-[-2px]'}`} />
+                              <div>
+                                <p className="text-xs font-black text-slate-700 uppercase tracking-tight">{s.title}</p>
+                                <p className="text-[10px] text-slate-400 font-medium">{s.sub}</p>
+                              </div>
+                            </div>
+                            <ChevronRight className={`w-4 h-4 text-slate-300 transition-transform duration-300 ${isExpanded ? 'rotate-90 text-slate-600' : ''}`} />
+                          </button>
+                          
+                          <AnimatePresence>
+                            {isExpanded && (
+                              <motion.div 
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                className="overflow-hidden bg-slate-50/50 rounded-2xl mx-1"
+                              >
+                                <div className="py-2 px-1">
+                                  {s.items.map(item => {
+                                    const isActive = activeBookItem?.bookId === s.id && activeBookItem?.itemId === item.id;
+                                    return (
+                                      <button 
+                                        key={item.id}
+                                        onClick={() => {
+                                          setActiveBookItem({ bookId: s.id, itemId: item.id });
+                                          setShowMobileMenu(false);
+                                        }}
+                                        className={`w-full flex items-center justify-between p-2.5 px-4 rounded-xl text-left transition-all ${isActive ? 'bg-white shadow-sm ring-1 ring-slate-200' : 'hover:bg-white/50'}`}
+                                      >
+                                        <div>
+                                          <p className={`text-[11px] font-black uppercase tracking-tight ${isActive ? 'text-emerald-600' : 'text-slate-600'}`}>{item.title}</p>
+                                          <p className="text-[9px] text-slate-400 font-medium">{item.detail}</p>
+                                        </div>
+                                        {isActive && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-200" />}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </div>
-                        {visibleLangs.includes(l) && <CheckCircle2 className="w-4 h-4" />}
-                      </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 </section>
               </div>
@@ -437,7 +545,7 @@ export default function App() {
                               <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">{meta.label}</span>
                             </div>
                             
-                            <div className="flex flex-wrap gap-x-1.5 gap-y-3">
+                            <div className="flex flex-wrap gap-x-1 gap-y-2.5">
                               {words.map((word, wordIdx) => {
                                 const isClicked = highlight?.lang === lang && highlight?.index === wordIdx;
                                 const isLinked = mapEntry && mapEntry[lang] === wordIdx && !isClicked;
@@ -447,7 +555,7 @@ export default function App() {
                                     key={wordIdx}
                                     onClick={(e) => handleWordClick(sentence.id, lang, wordIdx, e)}
                                     className={`
-                                      relative px-2 py-1 rounded-lg transition-all cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-indigo-400
+                                      relative px-1.5 py-1 rounded-lg transition-all cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-indigo-400
                                       ${isRTL ? 'font-serif text-2xl sm:text-3xl leading-relaxed' : 'font-serif text-xl sm:text-2xl'}
                                       ${isClicked ? 'bg-indigo-600 text-white shadow-lg ring-2 ring-indigo-600 z-10 scale-105' : ''}
                                       ${isLinked ? 'bg-emerald-50 ring-1 ring-emerald-200 text-emerald-900 font-bold' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}
@@ -465,15 +573,47 @@ export default function App() {
 
                     {/* Row Actions */}
                     {user?.uid === sentence.authorId && (
-                      <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-all">
+                      <div className="absolute top-4 right-4">
+                        {/* Desktop Dropdown */}
+                        <div className="hidden sm:block relative">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setActiveMenu(activeMenu === sentence.id ? null : sentence.id); }}
+                            className="p-2 text-slate-300 hover:text-slate-600 rounded-full hover:bg-slate-50 transition-colors"
+                          >
+                            <MoreVertical className="w-5 h-5" />
+                          </button>
+                          
+                          <AnimatePresence>
+                            {activeMenu === sentence.id && (
+                              <motion.div 
+                                initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                                className="absolute right-0 mt-2 w-36 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden"
+                              >
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); setEditingEntry(sentence); setShowCMS(true); setActiveMenu(null); }}
+                                  className="w-full flex items-center gap-3 px-4 py-3 text-xs font-bold text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
+                                >
+                                  <Edit3 className="w-4 h-4" /> Edit
+                                </button>
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); if(confirm("Delete entry?")) deleteDoc(doc(db, 'sentences', sentence.id)); setActiveMenu(null); }}
+                                  className="w-full flex items-center gap-3 px-4 py-3 text-xs font-bold text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                                >
+                                  <Trash2 className="w-4 h-4" /> Delete
+                                </button>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+
+                        {/* Mobile Action Trigger */}
                         <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if(confirm("Delete entry?")) deleteDoc(doc(db, 'sentences', sentence.id));
-                          }}
-                          className="p-2.5 bg-white shadow-md hover:bg-rose-50 text-slate-300 hover:text-rose-500 rounded-full border border-slate-100 transition-all transform hover:scale-110"
+                          onClick={(e) => { e.stopPropagation(); setActiveMenu(sentence.id); }}
+                          className="sm:hidden p-2 text-slate-300"
                         >
-                          <Trash2 className="w-5 h-5" />
+                          <MoreVertical className="w-5 h-5" />
                         </button>
                       </div>
                     )}
@@ -522,13 +662,132 @@ export default function App() {
         </div>
       )}
 
+      {/* Mobile Settings Sheet */}
+      <AnimatePresence>
+        {showSettingsSheet && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowSettingsSheet(false)}
+              className="fixed inset-0 z-[80] bg-slate-900/40 backdrop-blur-sm lg:hidden"
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed bottom-0 left-0 right-0 z-[90] bg-white rounded-t-[40px] p-8 pb-12 lg:hidden shadow-2xl border-t border-slate-100"
+            >
+              <div className="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mb-8" />
+              
+              <div className="space-y-8">
+                <section>
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-5 px-1">Visible Languages</label>
+                  <div className="space-y-2">
+                    {(['ottoman', 'sorani', 'turkish'] as Language[]).map(l => (
+                      <button
+                        key={l}
+                        onClick={() => toggleLang(l)}
+                        className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all ${
+                          visibleLangs.includes(l) 
+                            ? 'border-emerald-600 bg-emerald-50 text-emerald-700' 
+                            : 'border-slate-100 text-slate-400'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-2 h-2 rounded-full ${LANG_META[l].color}`} />
+                          <span className="text-xs font-black uppercase tracking-tight">{LANG_META[l].label}</span>
+                        </div>
+                        {visibleLangs.includes(l) && <CheckCircle2 className="w-4 h-4" />}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                <section>
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-5 px-1">Layout Mode</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button 
+                      onClick={() => setLayoutMode('side-by-side')}
+                      className={`flex flex-col items-center gap-3 p-5 rounded-2xl border transition-all ${layoutMode === 'side-by-side' ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-slate-100 text-slate-400'}`}
+                    >
+                      <LayoutGrid className="w-6 h-6" />
+                      <span className="text-[10px] font-black uppercase tracking-widest">Parallel</span>
+                    </button>
+                    <button 
+                      onClick={() => setLayoutMode('stacked')}
+                      className={`flex flex-col items-center gap-3 p-5 rounded-2xl border transition-all ${layoutMode === 'stacked' ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-slate-100 text-slate-400'}`}
+                    >
+                      <LayoutList className="w-6 h-6" />
+                      <span className="text-[10px] font-black uppercase tracking-widest">Vertical</span>
+                    </button>
+                  </div>
+                </section>
+
+                <button 
+                  onClick={() => setShowSettingsSheet(false)}
+                  className="w-full py-5 rounded-2xl bg-slate-900 text-white font-black uppercase text-xs tracking-[0.2em] shadow-xl"
+                >
+                  Done
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Mobile Action Sheet */}
+      <AnimatePresence>
+        {activeMenu && !editingEntry && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setActiveMenu(null)}
+              className="fixed inset-0 z-[80] bg-slate-900/40 backdrop-blur-sm sm:hidden"
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              className="fixed bottom-0 left-0 right-0 z-[90] bg-white rounded-t-[32px] p-8 sm:hidden"
+            >
+              <div className="w-12 h-1.5 bg-slate-100 rounded-full mx-auto mb-8" />
+              <div className="space-y-4">
+                <button 
+                   onClick={() => { const s = sentences.find(x => x.id === activeMenu); if(s) setEditingEntry(s); setShowCMS(true); }}
+                   className="w-full flex items-center gap-4 p-5 rounded-2xl bg-emerald-50 text-emerald-700 font-black uppercase text-xs tracking-widest"
+                >
+                  <Edit3 className="w-5 h-5" /> Edit Entry
+                </button>
+                <button 
+                   onClick={() => { if(confirm("Delete entry?")) deleteDoc(doc(db, 'sentences', activeMenu!)); setActiveMenu(null); }}
+                   className="w-full flex items-center gap-4 p-5 rounded-2xl bg-rose-50 text-rose-700 font-black uppercase text-xs tracking-widest"
+                >
+                  <Trash2 className="w-5 h-5" /> Delete Permanently
+                </button>
+                <button 
+                   onClick={() => setActiveMenu(null)}
+                   className="w-full p-5 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-xs tracking-widest"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
       {/* Floating Action Button */}
       {user && (
         <motion.button
           whileHover={{ scale: 1.1, rotate: 90 }}
           whileTap={{ scale: 0.9 }}
-          onClick={(e) => { e.stopPropagation(); setShowCMS(true); }}
-          className="fixed bottom-8 right-8 w-16 h-16 bg-rose-600 text-white rounded-2xl shadow-2xl shadow-rose-200 flex items-center justify-center hover:bg-rose-700 transition-all z-40"
+          onClick={(e) => { e.stopPropagation(); setEditingEntry(null); setShowCMS(true); }}
+          className="fixed bottom-8 right-8 w-16 h-16 bg-emerald-600 text-white rounded-2xl shadow-2xl shadow-emerald-100 flex items-center justify-center hover:bg-emerald-700 transition-all z-40"
         >
           <Plus className="w-8 h-8" />
         </motion.button>
@@ -586,11 +845,17 @@ export default function App() {
         {showCMS && user && (
           <CMSModal 
             user={user}
-            onClose={() => setShowCMS(false)} 
+            initialData={editingEntry}
+            onClose={() => { setShowCMS(false); setEditingEntry(null); }} 
             onSave={async (data) => {
               try {
-                await addDoc(collection(db, 'sentences'), { ...data, authorId: user.uid, createdAt: serverTimestamp() });
+                if (editingEntry) {
+                   await updateDoc(doc(db, 'sentences', editingEntry.id), { ...data, updatedAt: serverTimestamp() });
+                } else {
+                   await addDoc(collection(db, 'sentences'), { ...data, authorId: user.uid, createdAt: serverTimestamp() });
+                }
                 setShowCMS(false);
+                setEditingEntry(null);
                 setShowSavedToast(true);
                 setTimeout(() => setShowSavedToast(false), 2000);
               } catch (e) { handleFirestoreError(e, OperationType.CREATE, 'sentences'); }
@@ -606,17 +871,27 @@ export default function App() {
 
 interface CMSModalProps {
   user: User;
+  initialData?: Sentence | null;
   onClose: () => void;
   onSave: (data: Omit<Sentence, 'id' | 'authorId' | 'createdAt'>) => Promise<void>;
 }
 
-function CMSModal({ user, onClose, onSave }: CMSModalProps) {
-  const [inputs, setInputs] = useState<Record<Language, string>>({
-    ottoman: '',
-    sorani: '',
-    turkish: ''
+function CMSModal({ user, initialData, onClose, onSave }: CMSModalProps) {
+  const [inputs, setInputs] = useState<Record<Language, string>>(() => {
+    if (initialData) {
+      return {
+        ottoman: initialData.ottoman.join(' '),
+        sorani: initialData.sorani.join(' '),
+        turkish: initialData.turkish.join(' ')
+      };
+    }
+    return {
+      ottoman: '',
+      sorani: '',
+      turkish: '',
+    };
   });
-  const [wordMaps, setWordMaps] = useState<WordMap[]>([{ ottoman: null, sorani: null, turkish: null }]);
+  const [wordMaps, setWordMaps] = useState<WordMap[]>(initialData ? initialData.wordMap : [{ ottoman: null, sorani: null, turkish: null }]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -666,8 +941,8 @@ function CMSModal({ user, onClose, onSave }: CMSModalProps) {
       >
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
-            <UserIcon className="w-5 h-5 text-indigo-500" />
-            <h2 className="text-xl font-bold text-slate-800">Add New Parallel Entry</h2>
+            <Edit3 className="w-5 h-5 text-emerald-500" />
+            <h2 className="text-xl font-bold text-slate-800">{initialData ? 'Edit Sentence Pair' : 'Add New Parallel Entry'}</h2>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-all">
             <X className="w-6 h-6 text-slate-400" />
