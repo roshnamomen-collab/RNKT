@@ -1,0 +1,43 @@
+{
+  "entities": {
+    "Sentence": {
+      "title": "Sentence",
+      "description": "A parallel sentence entry in three languages with word alignment.",
+      "type": "object",
+      "properties": {
+        "ottoman": {
+          "type": "array",
+          "description": "Array of words in Ottoman Turkish"
+        },
+        "sorani": {
+          "type": "array",
+          "description": "Array of words in Sorani Kurdish"
+        },
+        "turkish": {
+          "type": "array",
+          "description": "Array of words in Modern Turkish"
+        },
+        "wordMap": {
+          "type": "array",
+          "description": "Array of objects mapping indexes between languages"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of creation"
+        },
+        "authorId": {
+          "type": "string",
+          "description": "UID of the user who added this entry"
+        }
+      },
+      "required": ["ottoman", "sorani", "turkish", "wordMap"]
+    }
+  },
+  "firestore": {
+    "/sentences/{sentenceId}": {
+      "schema": "Sentence",
+      "description": "Collection of parallel sentences."
+    }
+  }
+}
