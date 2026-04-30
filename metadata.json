@@ -1,6 +1,6 @@
 {
-  "name": "Trilingual Parallel Text Viewer",
-  "description": "A sophisticated trilingual viewer for parallel texts in Ottoman Turkish, Sorani Kurdish, and Modern Turkish, featuring word cross-referencing and interactive CMS capabilities.",
+  "name": "Ya Hakeem",
+  "description": "Risale-i Nur Parallel Text Viewer. A sophisticated trilingual viewer for Ottoman Turkish, Sorani Kurdish, and Modern Turkish.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

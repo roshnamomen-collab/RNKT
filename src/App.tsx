@@ -20,7 +20,10 @@ import {
   LogOut,
   User as UserIcon,
   Trash2,
-  Database
+  Database,
+  Menu,
+  Settings2,
+  MoreVertical
 } from 'lucide-react';
 import { auth, db, signInWithGoogle } from './lib/firebase';
 import { 
@@ -130,17 +133,20 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentPage, setCurrentPage] = useState(0);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('side-by-side');
   const [visibleLangs, setVisibleLangs] = useState<Language[]>(['ottoman', 'sorani', 'turkish']);
   const [showCMS, setShowCMS] = useState(false);
   const [showSavedToast, setShowSavedToast] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   
   // Interaction State
-  const [activeHighlight, setActiveHighlight] = useState<{ lang: Language; index: number } | null>(null);
+  const [activeHighlight, setActiveHighlight] = useState<{ sentenceId: string; lang: Language; index: number } | null>(null);
   const [popupPos, setPopupPos] = useState({ top: 0, left: 0 });
 
-  const currentSentence = sentences[currentIndex] || null;
+  const entriesPerPage = 10;
+  const totalPages = Math.ceil(sentences.length / entriesPerPage);
+  const paginatedSentences = sentences.slice(currentPage * entriesPerPage, (currentPage + 1) * entriesPerPage);
 
   // Auth Listener
   useEffect(() => {
@@ -171,10 +177,10 @@ export default function App() {
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
 
       if (e.key === 'ArrowLeft') {
-        setCurrentIndex(prev => Math.max(0, prev - 1));
+        setCurrentPage(prev => Math.max(0, prev - 1));
         clearInteraction();
       } else if (e.key === 'ArrowRight') {
-        setCurrentIndex(prev => Math.min(sentences.length - 1, prev + 1));
+        setCurrentPage(prev => Math.min(totalPages - 1, prev + 1));
         clearInteraction();
       } else if (e.key === 'Escape') {
         clearInteraction();
@@ -184,25 +190,26 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [sentences.length]);
+  }, [totalPages]);
 
   const clearInteraction = useCallback(() => {
     setActiveHighlight(null);
   }, []);
 
-  const handleWordClick = (lang: Language, index: number, e: React.MouseEvent) => {
+  const handleWordClick = (sentenceId: string, lang: Language, index: number, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent immediate closing if we move to click-away
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setPopupPos({
-      top: rect.bottom + window.scrollY + 12,
+      top: rect.bottom + window.scrollY + 8,
       left: rect.left + rect.width / 2 - 110,
     });
-    setActiveHighlight({ lang, index });
+    setActiveHighlight({ sentenceId, lang, index });
   };
 
-  const currentMapEntry = useMemo(() => {
-    if (!activeHighlight || !currentSentence) return null;
-    return currentSentence.wordMap.find(m => m[activeHighlight.lang] === activeHighlight.index);
-  }, [activeHighlight, currentSentence]);
+  const getMapEntry = (sentence: Sentence, highlight: typeof activeHighlight) => {
+    if (!highlight || highlight.sentenceId !== sentence.id) return null;
+    return sentence.wordMap.find(m => m[highlight.lang] === highlight.index);
+  };
 
   const toggleLang = (lang: Language) => {
     setVisibleLangs(prev => 
@@ -210,363 +217,383 @@ export default function App() {
     );
   };
 
-  const seedData = async () => {
-    if (!user) {
-      alert("Please sign in to seed data.");
-      return;
-    }
-    if (confirm("Populate database with default entries?")) {
-      for (const s of DEFAULT_SENTENCES_MOCK) {
-        try {
-          await addDoc(collection(db, 'sentences'), {
-            ...s,
-            authorId: user.uid,
-            createdAt: serverTimestamp()
-          });
-        } catch (error) {
-          handleFirestoreError(error, OperationType.CREATE, 'sentences');
-        }
-      }
-    }
-  };
-
-  const deleteCurrentEntry = async () => {
-    if (!currentSentence || !user) return;
-    if (currentSentence.authorId !== user.uid) {
-      alert("You can only delete your own entries.");
-      return;
-    }
-    if (confirm("Delete this entry forever?")) {
-      try {
-        await deleteDoc(doc(db, 'sentences', currentSentence.id));
-        if (currentIndex >= sentences.length - 1 && currentIndex > 0) {
-          setCurrentIndex(currentIndex - 1);
-        }
-      } catch (error) {
-        handleFirestoreError(error, OperationType.DELETE, `sentences/${currentSentence.id}`);
-      }
-    }
-  };
-
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="min-h-screen bg-white flex items-center justify-center">
         <motion.div 
           animate={{ rotate: 360 }}
           transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-          className="w-12 h-12 border-4 border-slate-200 border-t-slate-900 rounded-full"
+          className="w-10 h-10 border-2 border-slate-100 border-t-slate-900 rounded-full"
         />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans p-4 md:p-8 flex items-center justify-center">
-      <div className="w-full max-w-6xl bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden" id="app-container">
-        {/* Header */}
-        <header className="p-6 bg-slate-100/50 border-bottom border-slate-200">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="flex items-center gap-4">
-              <div>
-                <h1 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1">Philological Parallel Corpus</h1>
-                <h2 className="text-xl font-semibold text-slate-800">Trilingual Project</h2>
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100 pb-20" onClick={() => setActiveHighlight(null)}>
+      {/* Top Header */}
+      <header className="sticky top-0 z-50 w-full bg-white/80 backdrop-blur-md border-b border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={(e) => { e.stopPropagation(); setShowMobileMenu(true); }}
+              className="p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+              aria-label="Navigation Menu"
+            >
+              <Menu className="w-6 h-6" />
+            </button>
+            <div className="hidden sm:block w-px h-6 bg-slate-200 mx-1" />
+            <div className="cursor-pointer" onClick={() => setCurrentPage(0)}>
+              <h1 className="text-lg font-black tracking-tight text-slate-900 leading-none">Ya Hakeem</h1>
+              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mt-0.5">Risale-i Nur</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-6">
+            {/* Desktop Toolbar */}
+            <div className="hidden lg:flex items-center gap-2 pr-6 border-r border-slate-200">
+               <div className="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200">
+                  <button 
+                    onClick={() => setLayoutMode('side-by-side')}
+                    className={`p-1.5 rounded-md transition-all ${layoutMode === 'side-by-side' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+                    title="Parallel Mode"
+                  >
+                    <LayoutGrid className="w-4 h-4" />
+                  </button>
+                  <button 
+                    onClick={() => setLayoutMode('stacked')}
+                    className={`p-1.5 rounded-md transition-all ${layoutMode === 'stacked' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400 hover:text-slate-600'}`}
+                    title="Vertical Mode"
+                  >
+                    <LayoutList className="w-4 h-4" />
+                  </button>
+               </div>
+
+               <div className="flex items-center gap-1.5">
+                 {(['ottoman', 'sorani', 'turkish'] as Language[]).map(l => (
+                   <button
+                    key={l}
+                    onClick={() => toggleLang(l)}
+                    className={`px-2.5 py-1 text-[10px] font-black uppercase rounded-md border transition-all ${
+                      visibleLangs.includes(l) 
+                        ? `${l === 'ottoman' ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : l === 'sorani' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'}` 
+                        : 'bg-white border-slate-200 text-slate-300'
+                    }`}
+                   >
+                    {l}
+                   </button>
+                 ))}
+               </div>
+            </div>
+
+            {/* Mobile/Compact Actions */}
+            <div className="flex lg:hidden items-center gap-1">
+              <button 
+                onClick={(e) => { e.stopPropagation(); setShowMobileMenu(true); }}
+                className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"
+              >
+                <Settings2 className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Auth */}
+            <div className="flex items-center gap-3">
+              {user ? (
+                <div className="flex items-center gap-3 bg-slate-50 pl-2 sm:pl-3 pr-1 py-1 rounded-full border border-slate-200">
+                  <span className="hidden md:block text-[10px] font-black text-slate-500 uppercase tracking-tighter truncate max-w-[80px]">{user.displayName?.split(' ')[0]}</span>
+                  <img src={user.photoURL || ''} alt="" className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-white shadow-sm" />
+                  <button onClick={() => signOut(auth)} className="p-1.5 sm:p-2 hover:bg-slate-200 rounded-full text-slate-400"><LogOut className="w-3.5 h-3.5" /></button>
+                </div>
+              ) : (
+                <button 
+                  onClick={signInWithGoogle}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-full text-xs font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span className="hidden xs:inline">Sign In</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Mobile Navigation Drawer */}
+      <AnimatePresence>
+        {showMobileMenu && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowMobileMenu(false)}
+              className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed top-0 left-0 bottom-0 z-[70] w-[280px] bg-white shadow-2xl flex flex-col"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <h3 className="font-black text-slate-900 tracking-tight">Ya Hakeem</h3>
+                  <p className="text-[10px] font-bold text-emerald-600 uppercase">Configuration</p>
+                </div>
+                <button onClick={() => setShowMobileMenu(false)} className="p-2 bg-slate-50 rounded-full text-slate-400 hover:text-slate-900 transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              
-              {/* Auth Controls */}
-              <div className="flex items-center gap-2 ml-4 pl-4 border-l border-slate-200">
-                {user ? (
-                  <div className="flex items-center gap-3">
-                    <img src={user.photoURL || ''} alt="User" className="w-8 h-8 rounded-full border border-slate-200 shadow-sm" />
-                    <div className="hidden sm:block">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Contributor</p>
-                      <p className="text-xs font-semibold text-slate-700 max-w-[100px] truncate">{user.displayName}</p>
-                    </div>
+
+              <div className="flex-1 p-6 space-y-8">
+                <section>
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-4">View Mode</label>
+                  <div className="grid grid-cols-2 gap-2">
                     <button 
-                      onClick={() => signOut(auth)}
-                      className="p-2 hover:bg-slate-200 rounded-lg text-slate-400 hover:text-slate-900 transition-all"
-                      title="Sign Out"
+                      onClick={() => setLayoutMode('side-by-side')}
+                      className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-all ${layoutMode === 'side-by-side' ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-400'}`}
                     >
-                      <LogOut className="w-4 h-4" />
+                      <LayoutGrid className="w-6 h-6" />
+                      <span className="text-[10px] font-bold uppercase">Parallel</span>
+                    </button>
+                    <button 
+                      onClick={() => setLayoutMode('stacked')}
+                      className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-all ${layoutMode === 'stacked' ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-400'}`}
+                    >
+                      <LayoutList className="w-6 h-6" />
+                      <span className="text-[10px] font-bold uppercase">Vertical</span>
                     </button>
                   </div>
-                ) : (
-                  <button 
-                    onClick={signInWithGoogle}
-                    className="flex items-center gap-2 px-4 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 hover:border-slate-400 transition-all shadow-sm"
-                  >
-                    <LogIn className="w-3.5 h-3.5" />
-                    Sign In
-                  </button>
-                )}
-              </div>
-            </div>
+                </section>
 
-            <div className="flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-2 bg-white p-1 rounded-lg border border-slate-200 shadow-sm">
-                <LayoutGrid className="w-4 h-4 text-slate-400 ml-2" />
-                {(['side-by-side', 'stacked'] as const).map(mode => (
-                  <button
-                    key={mode}
-                    onClick={() => setLayoutMode(mode)}
-                    aria-label={`Switch to ${mode} view`}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                      layoutMode === mode 
-                        ? 'bg-slate-900 text-white shadow-md' 
-                        : 'text-slate-500 hover:bg-slate-100'
-                    }`}
-                  >
-                    {mode === 'side-by-side' ? 'Parallel' : 'Vertical'}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex items-center gap-2 bg-white p-1 rounded-lg border border-slate-200 shadow-sm">
-                <Languages className="w-4 h-4 text-slate-400 ml-2" />
-                {(['ottoman', 'sorani', 'turkish'] as const).map(lang => (
-                  <button
-                    key={lang}
-                    onClick={() => toggleLang(lang)}
-                    aria-label={`Toggle ${LANG_META[lang].label}`}
-                    className={`group px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-2 ${
-                      visibleLangs.includes(lang) 
-                        ? 'bg-slate-100 text-slate-900 border border-slate-200' 
-                        : 'text-slate-400 grayscale opacity-60 hover:opacity-100'
-                    }`}
-                  >
-                    <span className={`w-2 h-2 rounded-full ${LANG_META[lang].color}`} />
-                    {LANG_META[lang].label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </header>
-
-        {/* Content Area */}
-        <main className="p-6 min-h-[400px] relative">
-          <AnimatePresence mode="wait">
-            {sentences.length > 0 ? (
-              <motion.div
-                key={currentIndex}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-                className={`grid gap-6 ${layoutMode === 'side-by-side' ? 'md:grid-cols-3' : 'grid-cols-1'}`}
-                onPointerDown={(e) => {
-                  if (!(e.target as HTMLElement).closest('.word')) clearInteraction();
-                }}
-              >
-                {Object.entries(LANG_META).map(([langKey, meta], idx) => {
-                  const lang = langKey as Language;
-                  if (!visibleLangs.includes(lang)) return null;
-
-                  const words = currentSentence[lang];
-                  const isRTL = meta.rtl;
-
-                  return (
-                    <motion.div
-                      key={lang}
-                      initial={{ opacity: 0, scale: 0.98 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: idx * 0.1 }}
-                      className="flex flex-col bg-slate-50/50 rounded-xl border border-slate-200 overflow-hidden hover:shadow-md transition-shadow"
-                    >
-                      <div className="px-4 py-3 bg-white border-b border-slate-200 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-1 h-4 rounded-full ${meta.color}`} />
-                          <span className="text-sm font-semibold text-slate-700">{meta.label}</span>
-                        </div>
-                        <span className="text-[10px] uppercase font-bold text-slate-300 tracking-wider font-mono">{meta.sub}</span>
-                      </div>
-                      <div 
-                        className={`p-6 md:p-8 flex-1 ${isRTL ? 'text-right' : 'text-left'}`}
-                        dir={isRTL ? 'rtl' : 'ltr'}
+                <section>
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block mb-4">Active Corpuses</label>
+                  <div className="space-y-2">
+                    {(['ottoman', 'sorani', 'turkish'] as Language[]).map(l => (
+                      <button
+                        key={l}
+                        onClick={() => toggleLang(l)}
+                        className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${
+                          visibleLangs.includes(l) 
+                            ? 'border-emerald-600 bg-emerald-50 text-emerald-700' 
+                            : 'border-slate-200 text-slate-400'
+                        }`}
                       >
-                        <div className="flex flex-wrap gap-x-1 gap-y-2">
-                          {words.map((word, wordIdx) => {
-                            const isClicked = activeHighlight?.lang === lang && activeHighlight?.index === wordIdx;
-                            const isLinked = currentMapEntry && currentMapEntry[lang] === wordIdx && !isClicked;
+                        <div className="flex items-center gap-3">
+                          <div className={`w-2 h-2 rounded-full ${LANG_META[l].color}`} />
+                          <span className="text-xs font-bold uppercase">{LANG_META[l].label}</span>
+                        </div>
+                        {visibleLangs.includes(l) && <CheckCircle2 className="w-4 h-4" />}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              </div>
 
-                            return (
-                              <button
-                                key={wordIdx}
-                                onClick={(e) => handleWordClick(lang, wordIdx, e)}
-                                className={`word relative px-1 py-0.5 rounded-md transition-all cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2
-                                  ${isRTL ? 'font-serif text-2xl leading-relaxed' : 'font-serif text-xl'}
-                                  ${isClicked ? 'bg-amber-100 ring-2 ring-amber-400 text-slate-900 z-10' : ''}
-                                  ${isLinked ? 'bg-amber-50/80 ring-1 ring-amber-200/50 text-slate-900' : 'text-slate-700 hover:bg-slate-200/50'}
-                                `}
-                              >
-                                {word || '—'}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                      {currentSentence.authorId === user?.uid && (
-                        <div className="px-4 py-2 bg-white/50 border-t border-slate-100 text-[9px] font-bold text-slate-400 flex items-center justify-between">
-                          <span>YOUR ENTRY</span>
-                          <span>ID: {currentSentence.id.slice(0, 6)}</span>
-                        </div>
-                      )}
-                    </motion.div>
-                  );
-                })}
-              </motion.div>
-            ) : (
-              <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex flex-col items-center justify-center py-20 text-center"
-              >
-                <div className="p-4 bg-slate-100 rounded-full mb-4">
-                  <Database className="w-12 h-12 text-slate-300" />
-                </div>
-                <h3 className="text-lg font-bold text-slate-800">No Entries Found</h3>
-                <p className="text-sm text-slate-500 max-w-xs mt-2">The database is currently empty. Be the first to add a trilingual sentence pair!</p>
-                {user && (
-                  <button 
-                    onClick={seedData}
-                    className="mt-6 flex items-center gap-2 px-6 py-2 bg-slate-200 text-slate-700 rounded-lg text-sm font-bold hover:bg-slate-300 transition-all"
+              <div className="p-6 bg-slate-50 border-t border-slate-100 italic text-[10px] text-slate-400 text-center">
+                Refining the Risale-i Nur lexicon through comparison.
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Main List */}
+      <main className="max-w-7xl mx-auto px-4 py-8">
+        {sentences.length > 0 ? (
+          <div className="space-y-6">
+            <AnimatePresence mode="popLayout">
+              {paginatedSentences.map((sentence, sIdx) => {
+                const visibleCount = Object.keys(LANG_META).filter(l => visibleLangs.includes(l as Language)).length;
+                return (
+                  <motion.div
+                    key={sentence.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.98 }}
+                    transition={{ delay: (sIdx % entriesPerPage) * 0.05 }}
+                    className="group relative bg-white rounded-3xl border border-slate-200 overflow-hidden hover:shadow-2xl hover:border-emerald-100 transition-all duration-300"
                   >
-                    <RotateCcw className="w-4 h-4" />
-                    Seed Defaults
-                  </button>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
+                    <div className={`p-6 sm:p-8 grid gap-10 ${
+                      layoutMode === 'side-by-side' 
+                        ? visibleCount === 1 ? 'grid-cols-1' : visibleCount === 2 ? 'md:grid-cols-2' : 'lg:grid-cols-3' 
+                        : 'grid-cols-1'
+                    }`}>
+                      {Object.entries(LANG_META).map(([langKey, meta]) => {
+                        const lang = langKey as Language;
+                        if (!visibleLangs.includes(lang)) return null;
 
-          {/* Word Popup */}
-          <AnimatePresence>
-            {activeHighlight && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.92, y: 5 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.92, y: 5 }}
-                className="fixed z-[100] w-64 bg-white rounded-xl shadow-2xl border border-slate-900 p-4 pointer-events-none"
-                style={{ top: popupPos.top, left: popupPos.left }}
-              >
-                <div className="mb-3 pb-2 border-b border-slate-100 flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-tighter text-slate-400">Lexical Cross-Ref</span>
-                  <Info className="w-3 h-3 text-slate-300" />
-                </div>
-                <div className="space-y-3">
-                  {Object.entries(LANG_META).map(([langKey, meta]) => {
-                    const l = langKey as Language;
-                    if (l === activeHighlight.lang) return null;
-                    const linkedIdx = currentMapEntry ? currentMapEntry[l] : null;
-                    const linkedWord = linkedIdx !== null ? currentSentence[l][linkedIdx] : '—';
-                    
-                    return (
-                      <div key={l} className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-2">
-                          <div className={`w-1.5 h-1.5 rounded-full ${meta.color}`} />
-                          <span className="text-[10px] font-bold text-slate-500 uppercase">{meta.label}</span>
-                        </div>
-                        <span className={`text-sm font-semibold text-slate-800 ${meta.rtl ? 'font-serif text-lg text-right' : ''}`}>
-                          {linkedWord}
-                        </span>
+                        const words = sentence[lang];
+                        const isRTL = meta.rtl;
+                        const highlight = activeHighlight && activeHighlight.sentenceId === sentence.id ? activeHighlight : null;
+                        const mapEntry = getMapEntry(sentence, highlight);
+
+                        return (
+                          <div key={lang} className={`flex flex-col ${isRTL ? 'text-right' : 'text-left'}`} dir={isRTL ? 'rtl' : 'ltr'}>
+                            <div className={`flex items-center gap-2 mb-4 pb-2 border-b border-slate-50 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
+                              <div className={`w-3 h-3 rounded-full ${meta.color} ring-4 ring-slate-50`} />
+                              <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">{meta.label}</span>
+                            </div>
+                            
+                            <div className="flex flex-wrap gap-x-1.5 gap-y-3">
+                              {words.map((word, wordIdx) => {
+                                const isClicked = highlight?.lang === lang && highlight?.index === wordIdx;
+                                const isLinked = mapEntry && mapEntry[lang] === wordIdx && !isClicked;
+
+                                return (
+                                  <button
+                                    key={wordIdx}
+                                    onClick={(e) => handleWordClick(sentence.id, lang, wordIdx, e)}
+                                    className={`
+                                      relative px-2 py-1 rounded-lg transition-all cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-indigo-400
+                                      ${isRTL ? 'font-serif text-2xl sm:text-3xl leading-relaxed' : 'font-serif text-xl sm:text-2xl'}
+                                      ${isClicked ? 'bg-indigo-600 text-white shadow-lg ring-2 ring-indigo-600 z-10 scale-105' : ''}
+                                      ${isLinked ? 'bg-emerald-50 ring-1 ring-emerald-200 text-emerald-900 font-bold' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}
+                                    `}
+                                  >
+                                    {word || '—'}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Row Actions */}
+                    {user?.uid === sentence.authorId && (
+                      <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-all">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if(confirm("Delete entry?")) deleteDoc(doc(db, 'sentences', sentence.id));
+                          }}
+                          className="p-2.5 bg-white shadow-md hover:bg-rose-50 text-slate-300 hover:text-rose-500 rounded-full border border-slate-100 transition-all transform hover:scale-110"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
                       </div>
-                    );
-                  })}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </main>
-
-        {/* Navigation */}
-        <footer className="p-6 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => { setCurrentIndex(prev => Math.max(0, prev - 1)); clearInteraction(); }}
-              disabled={currentIndex === 0}
-              aria-label="Previous sentence"
-              className="p-3 rounded-full bg-white border border-slate-200 shadow-sm text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed hover:border-slate-400 hover:text-slate-900 transition-all active:scale-90"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <div className="flex flex-col items-center min-w-[80px]">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Entry</span>
-              <span className="text-lg font-black text-slate-800 tabular-nums">{currentIndex + 1} / {sentences.length}</span>
-            </div>
-            <button
-              onClick={() => { setCurrentIndex(prev => Math.min(sentences.length - 1, prev + 1)); clearInteraction(); }}
-              disabled={currentIndex === sentences.length - 1}
-              aria-label="Next sentence"
-              className="p-3 rounded-full bg-white border border-slate-200 shadow-sm text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed hover:border-slate-400 hover:text-slate-900 transition-all active:scale-90"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {user ? (
-              <button 
-                onClick={() => setShowCMS(true)}
-                className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 text-white rounded-full text-sm font-bold shadow-lg shadow-slate-200 hover:bg-slate-800 transition-all active:scale-95"
-              >
-                <Plus className="w-4 h-4" />
-                Add Entry
-              </button>
-            ) : (
-              <button 
-                onClick={signInWithGoogle}
-                className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-full text-sm font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95"
-              >
-                <LogIn className="w-4 h-4" />
-                Sign In to Add
-              </button>
-            )}
-            
-            {currentSentence && currentSentence.authorId === user?.uid && (
-              <button 
-                onClick={deleteCurrentEntry}
-                aria-label="Delete current entry"
-                className="p-2.5 rounded-full bg-white border border-slate-200 text-slate-400 hover:text-red-600 hover:border-red-200 transition-all"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            )}
-            
-            <AnimatePresence>
-              {showSavedToast && (
-                <motion.div
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  className="flex items-center gap-2 text-emerald-600 font-bold text-sm"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  Synced
-                </motion.div>
-              )}
+                    )}
+                  </motion.div>
+                );
+              })}
             </AnimatePresence>
           </div>
-        </footer>
-      </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-32 text-center">
+             <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6">
+                <Database className="w-10 h-10 text-slate-300" />
+             </div>
+             <h3 className="text-2xl font-black text-slate-900">The library is empty</h3>
+             <p className="text-sm text-slate-500 mt-2 max-w-sm">Sign in to begin documenting the Risale-i Nur lexicon through parallel trilingual analysis.</p>
+          </div>
+        )}
+      </main>
 
-      {/* CMS Modal */}
+      {/* Pagination Footer */}
+      {totalPages > 1 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-indigo-900 text-white px-5 py-3 rounded-2xl shadow-2xl z-40">
+           <button 
+             disabled={currentPage === 0}
+             onClick={() => {setCurrentPage(p => p - 1); window.scrollTo(0,0);}}
+             className="p-2 rounded-xl hover:bg-white/10 disabled:opacity-20 transition-colors"
+           >
+             <ChevronLeft className="w-5 h-5" />
+           </button>
+           <div className="flex items-center gap-2 px-4 border-l border-r border-white/10">
+              {Array.from({length: totalPages}).map((_, i) => (
+                <button 
+                  key={i}
+                  onClick={() => {setCurrentPage(i); window.scrollTo(0,0);}}
+                  className={`w-2.5 h-2.5 rounded-full transition-all ${currentPage === i ? 'w-8 bg-emerald-400' : 'bg-white/20 hover:bg-white/40'}`}
+                />
+              ))}
+           </div>
+           <button 
+             disabled={currentPage === totalPages - 1}
+             onClick={() => {setCurrentPage(p => p + 1); window.scrollTo(0,0);}}
+             className="p-2 rounded-xl hover:bg-white/10 disabled:opacity-20 transition-colors"
+           >
+             <ChevronRight className="w-5 h-5" />
+           </button>
+        </div>
+      )}
+
+      {/* Floating Action Button */}
+      {user && (
+        <motion.button
+          whileHover={{ scale: 1.1, rotate: 90 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={(e) => { e.stopPropagation(); setShowCMS(true); }}
+          className="fixed bottom-8 right-8 w-16 h-16 bg-rose-600 text-white rounded-2xl shadow-2xl shadow-rose-200 flex items-center justify-center hover:bg-rose-700 transition-all z-40"
+        >
+          <Plus className="w-8 h-8" />
+        </motion.button>
+      )}
+
+      {/* Word Popup */}
+      <AnimatePresence>
+        {activeHighlight && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 10 }}
+            onClick={e => e.stopPropagation()}
+            className="fixed z-[100] w-72 bg-slate-900 text-white rounded-3xl shadow-2xl p-6 pointer-events-auto border border-white/5"
+            style={{ top: popupPos.top, left: popupPos.left }}
+          >
+            <div className="flex items-center justify-between mb-5 pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <Info className="w-4 h-4 text-emerald-400" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Lexical Link</span>
+              </div>
+              <button 
+                onClick={() => setActiveHighlight(null)}
+                className="p-1 hover:bg-white/10 rounded-full transition-colors"
+              >
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+            <div className="space-y-6">
+               {Object.entries(LANG_META).map(([langKey, meta]) => {
+                  const l = langKey as Language;
+                  if (l === activeHighlight.lang) return null;
+                  
+                  const activeSent = sentences.find(s => s.id === activeHighlight.sentenceId);
+                  const entry = activeSent ? getMapEntry(activeSent, activeHighlight) : null;
+                  const idx = entry ? entry[l] : null;
+                  const word = (activeSent && idx !== null) ? activeSent[l][idx] : '—';
+
+                  return (
+                    <div key={l} className="flex flex-col gap-1.5 Group">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-1.5 h-1.5 rounded-full ${meta.color}`} />
+                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">{meta.label}</span>
+                      </div>
+                      <span className={`text-base leading-relaxed ${meta.rtl ? 'font-serif text-xl text-right text-emerald-50 font-medium' : 'font-serif font-bold text-slate-100'}`}>{word}</span>
+                    </div>
+                  );
+               })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {showCMS && user && (
           <CMSModal 
             user={user}
             onClose={() => setShowCMS(false)} 
-            onSave={async (newEntryData) => {
+            onSave={async (data) => {
               try {
-                await addDoc(collection(db, 'sentences'), {
-                  ...newEntryData,
-                  authorId: user.uid,
-                  createdAt: serverTimestamp()
-                });
+                await addDoc(collection(db, 'sentences'), { ...data, authorId: user.uid, createdAt: serverTimestamp() });
                 setShowCMS(false);
                 setShowSavedToast(true);
                 setTimeout(() => setShowSavedToast(false), 2000);
-              } catch (error) {
-                handleFirestoreError(error, OperationType.CREATE, 'sentences');
-              }
+              } catch (e) { handleFirestoreError(e, OperationType.CREATE, 'sentences'); }
             }}
           />
         )}
