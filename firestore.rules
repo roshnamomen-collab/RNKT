@@ -2,11 +2,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 0. Default Deny
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
     // --- Helpers ---
     function isSignedIn() {
       return request.auth != null;
@@ -32,31 +27,29 @@ service cloud.firestore {
 
     function isValidSentence(data) {
       return data.keys().hasAll(['bookId', 'itemId', 'ottoman', 'sorani', 'turkish', 'wordMap', 'authorId', 'createdAt'])
-        && (data.keys().size() == 8 || (data.keys().size() == 9 && data.keys().hasAll(['updatedAt'])))
-        && data.bookId is string && data.bookId.size() <= 64
-        && data.itemId is string && data.itemId.size() <= 64
-        && data.ottoman is list && data.ottoman.size() <= 500
-        && data.sorani is list && data.sorani.size() <= 500
-        && data.turkish is list && data.turkish.size() <= 500
-        && data.wordMap is list && data.wordMap.size() <= 500
+        && data.bookId is string && data.bookId.size() <= 128
+        && data.itemId is string && data.itemId.size() <= 128
+        && data.ottoman is list && data.ottoman.size() <= 1000
+        && data.sorani is list && data.sorani.size() <= 1000
+        && data.turkish is list && data.turkish.size() <= 1000
+        && data.wordMap is list && data.wordMap.size() <= 1000
         && data.authorId is string && data.authorId.size() <= 128;
     }
 
     // --- Collections ---
 
     match /sentences/{sentenceId} {
-      // 8. Secure List Queries: Explicitly allow public reading as this is an educational tool.
-      allow list: if true; 
-      allow get: if true;
+      allow read: if true;
 
       allow create: if isSignedIn()
+        && request.auth.token.email_verified == true
         && isValidId(sentenceId)
         && isValidSentence(incoming())
         && incoming().authorId == request.auth.uid
-        && incoming().createdAt == request.time
-        && incoming().keys().size() == 8; // No updatedAt on create
+        && incoming().createdAt == request.time;
 
       allow update: if isSignedIn()
+        && request.auth.token.email_verified == true
         && isValidId(sentenceId)
         && isOwner(existing())
         && isValidSentence(incoming())
@@ -64,11 +57,14 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && (
-          // Action: Edit content or metadata
           incoming().diff(existing()).affectedKeys().hasOnly(['ottoman', 'sorani', 'turkish', 'wordMap', 'bookId', 'itemId', 'updatedAt'])
         );
 
       allow delete: if isSignedIn() && isOwner(existing());
+    }
+
+    match /test/{document=**} {
+      allow read, write: if true;
     }
   }
 }

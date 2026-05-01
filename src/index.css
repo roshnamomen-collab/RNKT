@@ -1,19 +1,1 @@
-@import url('https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Inter:wght@400;500;600;700;800;900&family=Literata:ital,opsz,wght@0,7..72,200..900;1,7..72,200..900&family=Old+Standard+TT:ital,wght@0,400;0,700;1,400&family=Lora:ital,wght@0,400;0,500;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap');
 @import "tailwindcss";
-
-@theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Amiri", "Lora", serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-  --font-literata: "Literata", serif;
-  --font-old-standard: "Old Standard TT", serif;
-  --font-barla-souvenir: "Barla Souvenir Demi BT", serif;
-  --font-barla-aria: "Barla Aria Script", cursive;
-  --font-barla-liva: "Barla Liva Nur", serif;
-}
-
-@layer base {
-  body {
-    @apply antialiased;
-  }
-}

@@ -26,7 +26,7 @@ import {
   Database,
   Menu,
   Settings2,
-  Type,
+  Type as TypeIcon,
   MoreVertical,
   Edit3,
   Link2,
@@ -36,7 +36,10 @@ import {
   Copy,
   AlertTriangle,
   MessageSquare,
-  Check
+  Check,
+  RefreshCw,
+  Sparkles,
+  ArrowUp
 } from 'lucide-react';
 import { auth, db, signInWithGoogle } from './lib/firebase';
 import { 
@@ -56,6 +59,63 @@ import {
   updateDoc,
   Timestamp 
 } from 'firebase/firestore';
+
+import { GoogleGenAI, Type as aiType } from "@google/genai";
+
+// --- AI Service ---
+const aiApiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+const genAI = new GoogleGenAI({ apiKey: aiApiKey });
+const ai = genAI;
+
+const translateToSorani = async (ottoman: string) => {
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: `Translate the following Ottoman Turkish sentence from Risale-i Nur into Sorani Kurdish. 
+    The translation should be academic and faithful to the original style.
+    Note: Risale-i Nur terminology is very specific. Translate with high accuracy.
+    
+    Ottoman: ${ottoman}
+    
+    Return ONLY the Sorani Kurdish translation.`,
+  });
+  return response.text.trim();
+};
+
+const autoMapIndices = async (ottoman: string[], sorani: string[], turkish: string[]) => {
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: `Map the corresponding words between these three parallel versions of a sentence.
+    Ottoman, Turkish, and Sorani. 
+    Note: Ottoman and Turkish are highly compatible word-for-word.
+    
+    Ottoman Tokens: ${JSON.stringify(ottoman.map((t, i) => `${i}: ${t}`))}
+    Turkish Tokens: ${JSON.stringify(turkish.map((t, i) => `${i}: ${t}`))}
+    Sorani Tokens: ${JSON.stringify(sorani.map((t, i) => `${i}: ${t}`))}
+    
+    Return a list of mapping objects. Each object should have 'ottoman', 'sorani', and 'turkish' keys containing the word index for that language. If a word doesn't have a direct map in a language, use null.`,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: aiType.ARRAY,
+        items: {
+          type: aiType.OBJECT,
+          properties: {
+            ottoman: { type: aiType.INTEGER, nullable: true },
+            sorani: { type: aiType.INTEGER, nullable: true },
+            turkish: { type: aiType.INTEGER, nullable: true }
+          }
+        }
+      }
+    }
+  });
+  
+  try {
+    return JSON.parse(response.text);
+  } catch (e) {
+    console.error("Failed to parse AI mapping:", e);
+    return [];
+  }
+};
 
 // --- Types ---
 
@@ -346,6 +406,7 @@ interface SidebarContentProps {
   activeBookItem: { bookId: string; itemId: string } | null;
   setActiveBookItem: (val: { bookId: string; itemId: string }) => void;
   setShowMobileMenu: (show: boolean) => void;
+  isDarkMode: boolean;
 }
 
 const SidebarContent = React.memo(({ 
@@ -355,12 +416,13 @@ const SidebarContent = React.memo(({
   setExpandedItem, 
   activeBookItem, 
   setActiveBookItem, 
-  setShowMobileMenu
+  setShowMobileMenu,
+  isDarkMode
 }: SidebarContentProps) => (
-  <div className="flex flex-col h-full uppercase dark:bg-slate-900 transition-colors">
+  <div className={`flex flex-col h-full uppercase transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-900'}`}>
     <div className="flex-1 overflow-y-auto p-4 space-y-6">
       <section>
-        <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest block mb-4 px-2">Risale-i Nur Collection</label>
+        <label className={`text-[10px] font-black uppercase tracking-widest block mb-4 px-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Risale-i Nur Collection</label>
         <div className="space-y-2">
           {RISALE_SECTIONS.map(s => {
             const isExpanded = expandedSection === s.id;
@@ -368,15 +430,15 @@ const SidebarContent = React.memo(({
               <div key={s.id} className="space-y-1">
                 <button 
                   onClick={() => setExpandedSection(isExpanded ? null : s.id)}
-                  className={`w-full flex items-center justify-between p-3 rounded-2xl transition-all text-left ${isExpanded ? 'bg-slate-50 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                  className={`w-full flex items-center justify-between p-3 rounded-2xl transition-all text-left ${isExpanded ? (isDarkMode ? 'bg-slate-800 border border-slate-700 shadow-lg' : 'bg-slate-50 border border-slate-100 shadow-sm') : (isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50')}`}
                 >
                   <div className="flex items-center gap-2">
                     <div className={`w-1 h-5 rounded-full ${s.color} transition-all ${isExpanded ? 'opacity-100' : 'opacity-20 translate-x-[-2px]'}`} />
                     <div>
-                      <p className={`text-[11px] font-black uppercase tracking-tight ${isExpanded ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>{s.title}</p>
+                      <p className={`text-[11px] font-black uppercase tracking-tight ${isExpanded ? (isDarkMode ? 'text-white' : 'text-slate-900') : (isDarkMode ? 'text-slate-300' : 'text-slate-700')}`}>{s.title}</p>
                     </div>
                   </div>
-                  <ChevronDown className={`w-4 h-4 text-slate-300 transition-transform duration-300 ${isExpanded ? 'rotate-180 text-slate-600 dark:text-slate-400' : ''}`} />
+                  <ChevronDown className={`w-4 h-4 text-slate-300 transition-transform duration-300 ${isExpanded ? (isDarkMode ? 'rotate-180 text-white' : 'rotate-180 text-slate-600') : ''}`} />
                 </button>
                 
                 <AnimatePresence>
@@ -385,7 +447,7 @@ const SidebarContent = React.memo(({
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: 'auto', opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }}
-                      className="overflow-hidden bg-slate-50/50 dark:bg-slate-800/50 rounded-2xl mx-1"
+                      className={`overflow-hidden rounded-2xl mx-1 ${isDarkMode ? 'bg-slate-800/40 border border-slate-700/50' : 'bg-slate-50/50'}`}
                     >
                       <div className="py-1 px-1">
                         {s.items.map(item => {
@@ -404,13 +466,13 @@ const SidebarContent = React.memo(({
                                     setExpandedItem(isItemExpanded ? null : item.id);
                                   }
                                 }}
-                                className={`w-full flex items-center justify-between p-2 px-4 rounded-xl text-left transition-all ${isActive ? 'bg-white dark:bg-slate-700 shadow-sm' : 'hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
+                                className={`w-full flex items-center justify-between p-2 px-4 rounded-xl text-left transition-all ${isActive ? (isDarkMode ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white shadow-sm') : (isDarkMode ? 'hover:bg-slate-700/50 text-slate-300' : 'hover:bg-white/50 text-slate-500')}`}
                               >
                                 <div className="flex items-center gap-2">
-                                  <div className={`w-1 h-1 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'}`} />
+                                  <div className={`w-1 h-1 rounded-full ${isActive ? 'bg-white' : (isDarkMode ? 'bg-slate-600' : 'bg-slate-200')}`} />
                                   <div>
-                                    <p className={`text-[10px] font-bold uppercase tracking-tight ${isActive ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>{item.title}</p>
-                                    {item.detail && isLeaf && <p className="text-[8px] text-slate-400 dark:text-slate-500 font-medium truncate max-w-[140px]">{item.detail}</p>}
+                                    <p className={`text-[10px] font-bold uppercase tracking-tight ${isActive ? 'text-white' : (isDarkMode ? 'text-slate-300' : 'text-slate-500')}`}>{item.title}</p>
+                                    {item.detail && isLeaf && <p className={`text-[8px] font-medium truncate max-w-[140px] ${isActive ? 'text-indigo-200' : 'text-slate-500 dark:text-slate-500'}`}>{item.detail}</p>}
                                   </div>
                                 </div>
                                 {!isLeaf && (
@@ -424,7 +486,7 @@ const SidebarContent = React.memo(({
                                     initial={{ height: 0, opacity: 0 }}
                                     animate={{ height: 'auto', opacity: 1 }}
                                     exit={{ height: 0, opacity: 0 }}
-                                    className="overflow-hidden bg-slate-100/50 dark:bg-slate-800/50 rounded-lg mx-2"
+                                    className={`overflow-hidden rounded-lg mx-2 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-100/50'}`}
                                   >
                                     <div className="py-1">
                                       {(item as any).subItems.map((si: any) => {
@@ -436,7 +498,7 @@ const SidebarContent = React.memo(({
                                               setActiveBookItem({ bookId: s.id, itemId: si.id });
                                               setShowMobileMenu(false);
                                             }}
-                                            className={`w-full py-1.5 px-6 text-left transition-all text-[9px] font-bold uppercase tracking-tight ${isSiActive ? 'text-emerald-600 dark:text-emerald-400 bg-white/80 dark:bg-slate-700' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-white/40'}`}
+                                            className={`w-full py-1.5 px-6 text-left transition-all text-[9px] font-bold uppercase tracking-tight ${isSiActive ? (isDarkMode ? 'text-emerald-400 bg-slate-700' : 'text-emerald-600 bg-white/80') : (isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600 hover:bg-white/40')}`}
                                           >
                                             {si.title}
                                           </button>
@@ -459,7 +521,7 @@ const SidebarContent = React.memo(({
         </div>
       </section>
     </div>
-    <div className="p-6 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800/50 italic text-[9px] text-slate-400 dark:text-slate-500 text-center leading-relaxed">
+    <div className={`p-6 border-t font-serif italic text-[9px] text-center leading-relaxed ${isDarkMode ? 'bg-slate-900/40 border-slate-800/50 text-slate-400' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
       "Refining the Risale-i Nur lexicon through comparison."
     </div>
   </div>
@@ -487,9 +549,18 @@ const DisplaySettingsSheet = ({
   visibleLangs,
   toggleLang,
   onReset,
+  isDarkMode,
+  setIsDarkMode,
   DEFAULT_SIZES
 }: any) => {
+  const [expandedLangs, setExpandedLangs] = useState<string[]>([]);
   if (!show) return null;
+
+  const toggleExpanded = (id: string) => {
+    setExpandedLangs(prev => 
+      prev.includes(id) ? prev.filter(l => l !== id) : [...prev, id]
+    );
+  };
   
   const turkishOptions = [
     { id: 'font-literata', label: 'Literata' },
@@ -508,15 +579,15 @@ const DisplaySettingsSheet = ({
   ];
 
   const FontSelector = ({ value, setter, options }: any) => (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap gap-1.5 pt-2">
       {options.map((opt: any) => (
         <button
           key={opt.id}
           onClick={() => setter(opt.id)}
           className={`px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all border ${
             value === opt.id 
-              ? 'bg-slate-900 dark:bg-indigo-600 border-slate-900 dark:border-indigo-600 text-white shadow-sm' 
-              : 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:border-slate-300 dark:hover:border-slate-600 hover:text-slate-600 dark:hover:text-slate-300'
+              ? 'bg-slate-900 dark:bg-indigo-600/50 border-slate-900 dark:border-indigo-500/50 text-white shadow-sm' 
+              : 'bg-white dark:bg-slate-800/50 border-slate-100 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:border-slate-300 dark:hover:border-slate-600 hover:text-slate-600 dark:hover:text-slate-300'
           }`}
         >
           {opt.label}
@@ -527,19 +598,19 @@ const DisplaySettingsSheet = ({
 
   const SizeStepper = ({ value, setter, defaultSize }: any) => (
     <div className="flex items-center gap-2">
-      <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200/50 dark:border-slate-700/50">
+      <div className={`flex items-center p-1 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-100 border-slate-200/50'}`}>
         <button 
           onClick={() => setter(Math.max(12, value - 1))}
-          className="w-7 h-7 flex items-center justify-center bg-white dark:bg-slate-700 rounded-lg shadow-sm text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white active:scale-95 transition-all"
+          className={`w-7 h-7 flex items-center justify-center rounded-lg shadow-sm transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-white border border-slate-700' : 'bg-white text-slate-500 hover:text-slate-900'}`}
         >
           <Minus className="w-3 h-3" />
         </button>
         <div className="min-w-[2.2rem] text-center">
-          <span className="text-[10px] font-black text-slate-700 dark:text-slate-300">{value}</span>
+          <span className={`text-[10px] font-black ${isDarkMode ? 'text-slate-100' : 'text-slate-700'}`}>{value}</span>
         </div>
         <button 
           onClick={() => setter(Math.min(48, value + 1))}
-          className="w-7 h-7 flex items-center justify-center bg-white dark:bg-slate-700 rounded-lg shadow-sm text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white active:scale-95 transition-all"
+          className={`w-7 h-7 flex items-center justify-center rounded-lg shadow-sm transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-white border border-slate-700' : 'bg-white text-slate-500 hover:text-slate-900'}`}
         >
           <Plus className="w-3 h-3" />
         </button>
@@ -563,119 +634,155 @@ const DisplaySettingsSheet = ({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
-        className="fixed inset-0 z-[100] bg-slate-950/20 backdrop-blur-[2px] flex items-end sm:items-center justify-center p-4 focus:outline-none"
+        className={`fixed inset-0 z-[100] backdrop-blur-[2px] flex justify-end focus:outline-none overflow-hidden ${isDarkMode ? 'bg-slate-900/60' : 'bg-slate-900/40'}`}
       >
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.98, y: 15 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.98, y: 15 }}
-          transition={{ duration: 0.2, ease: "circOut" }}
-          onClick={e => e.stopPropagation()}
-          className="w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-100"
-        >
-          <div className="p-6 border-b border-slate-50 flex items-center justify-between bg-white/80 backdrop-blur-md">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-indigo-50 rounded-xl">
-                <Settings2 className="w-5 h-5 text-indigo-600" />
-              </div>
-              <div>
-                <h3 className="font-black text-slate-900 dark:text-white uppercase tracking-[0.2em] text-[10px]">Display Preferences</h3>
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Interface Calibration</p>
-              </div>
+      <motion.div 
+        initial={{ opacity: 0, x: 100 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: 100 }}
+        transition={{ type: "spring", damping: 30, stiffness: 300 }}
+        onClick={e => e.stopPropagation()}
+        className={`w-full max-w-sm sm:max-w-xs h-full shadow-2xl overflow-hidden border-l flex flex-col ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
+      >
+        <div className={`p-6 border-b flex items-center justify-between backdrop-blur-md ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-50'}`}>
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl">
+              <Settings2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
             </div>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={onReset}
-                title="Reset to defaults"
-                className="p-2 hover:bg-slate-50 rounded-full text-slate-300 hover:text-slate-600 transition-colors"
-              >
-                <RotateCcw className="w-4 h-4" />
-              </button>
-              <button onClick={onClose} className="p-2 hover:bg-slate-50 rounded-full transition-colors text-slate-300 hover:text-slate-500">
-                <X className="w-5 h-5" />
-              </button>
+            <div>
+              <h3 className="font-black text-slate-900 dark:text-white uppercase tracking-[0.2em] text-[10px]">Display preferences</h3>
+              <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Interface Calibration</p>
             </div>
           </div>
-          
-          <div className="p-6 space-y-10 overflow-y-auto max-h-[75vh]">
-            <div className="grid grid-cols-2 gap-6">
-              <section className="space-y-3">
-                <label className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-[0.15em] ml-1">Visible</label>
-                <div className="flex bg-slate-50 dark:bg-slate-800/50 p-1 rounded-2xl border border-slate-100/50 dark:border-slate-800/50">
-                  {(['ottoman', 'sorani', 'turkish'] as Language[]).map(l => (
-                    <button
-                      key={l}
-                      onClick={() => toggleLang(l)}
-                      className={`flex-1 py-2 text-[9px] font-black uppercase rounded-xl transition-all ${
-                        visibleLangs.includes(l) 
-                          ? `${l === 'ottoman' ? 'bg-indigo-600 text-white shadow-sm' : l === 'sorani' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-rose-600 text-white shadow-sm'}` 
-                          : 'text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400'
-                      }`}
-                    >
-                      {l.slice(0,3)}
-                    </button>
-                  ))}
-                </div>
-              </section>
-
-              <section className="space-y-3">
-                <label className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-[0.15em] ml-1">Layout</label>
-                <div className="flex bg-slate-50 dark:bg-slate-800/50 p-1 rounded-2xl border border-slate-100/50 dark:border-slate-800/50">
-                  <button 
-                    onClick={() => setLayoutMode('side-by-side')}
-                    className={`flex-1 flex items-center justify-center py-2 rounded-xl text-[9px] font-black uppercase transition-all ${layoutMode === 'side-by-side' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400'}`}
-                  >
-                    <LayoutGrid className="w-3.5 h-3.5" />
-                  </button>
-                  <button 
-                    onClick={() => setLayoutMode('stacked')}
-                    className={`flex-1 flex items-center justify-center py-2 rounded-xl text-[9px] font-black uppercase transition-all ${layoutMode === 'stacked' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400'}`}
-                  >
-                    <LayoutList className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </section>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={onReset}
+              title="Reset to defaults"
+              className="p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full text-slate-300 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+            <button onClick={onClose} className="p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-300 dark:text-slate-500 hover:text-slate-500 dark:hover:text-slate-400">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+        
+        <div className="flex-1 p-6 space-y-10 overflow-y-auto">
+          <section className="space-y-4">
+            <label className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-[0.15em] ml-1">UI Theme</label>
+          <div className={`flex bg-slate-50 dark:bg-slate-800 p-1 rounded-2xl border border-slate-100/50 dark:border-slate-700`}>
+              <button 
+                onClick={() => setIsDarkMode(false)}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[9px] font-black uppercase transition-all ${!isDarkMode ? 'bg-white shadow-sm text-slate-900 border border-slate-100' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                <Sun className="w-3.5 h-3.5" /> Light
+              </button>
+              <button 
+                onClick={() => setIsDarkMode(true)}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[9px] font-black uppercase transition-all ${isDarkMode ? 'bg-slate-800 shadow-inner text-white border border-slate-700' : 'text-slate-400 hover:text-slate-500 font-bold dark:hover:text-slate-200'}`}
+              >
+                <Moon className="w-3.5 h-3.5" /> Dark
+              </button>
             </div>
+          </section>
 
-            <section className="space-y-6">
-              <label className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-[0.15em] block ml-1">Typography & Sizing</label>
-              
-              <div className="space-y-6">
-                {[
-                  { id: 'turkish', label: 'Turkish', value: turkishFont, setter: setTurkishFont, size: turkishFontSize, sizeSetter: setTurkishFontSize, options: turkishOptions, defaultSize: DEFAULT_SIZES?.turkish },
-                  { id: 'kurdish', label: 'Kurdish', value: kurdishFont, setter: setKurdishFont, size: kurdishFontSize, sizeSetter: setKurdishFontSize, options: arabicOptions, defaultSize: DEFAULT_SIZES?.kurdish },
-                  { id: 'ottoman', label: 'Ottoman', value: ottomanFont, setter: setOttomanFont, size: ottomanFontSize, sizeSetter: setOttomanFontSize, options: arabicOptions, defaultSize: DEFAULT_SIZES?.ottoman },
-                ].map(group => (
-                  <div key={group.id} className="space-y-4 p-5 rounded-3xl border border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-800/20">
-                    <div className="flex items-center justify-between">
+          <section className="space-y-4">
+            <label className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-[0.15em] ml-1">Languages & Layout</label>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1.5">
+                {(['ottoman', 'sorani', 'turkish'] as Language[]).map(l => (
+                  <button
+                    key={l}
+                    onClick={() => toggleLang(l)}
+                    className={`flex items-center gap-2 px-3 py-2 text-[9px] font-black uppercase rounded-xl transition-all border ${
+                      visibleLangs.includes(l) 
+                        ? `${l === 'ottoman' ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-400 font-black' : l === 'sorani' ? 'bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 font-black' : 'bg-rose-50 dark:bg-rose-900/30 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-400 font-black'}` 
+                        : `${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-300 hover:border-slate-700' : 'bg-white border-slate-100 text-slate-300 hover:text-slate-600'}`
+                    }`}
+                  >
+                    <div className={`w-1.5 h-1.5 rounded-full ${visibleLangs.includes(l) ? 'bg-current' : 'bg-slate-200 dark:bg-slate-700'}`} />
+                    {l.slice(0,3)}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <button 
+                  onClick={() => setLayoutMode('side-by-side')}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-all border ${layoutMode === 'side-by-side' ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-600 dark:text-indigo-400' : 'bg-slate-50/50 dark:bg-slate-800/40 text-slate-300 dark:text-slate-500 border-transparent'}`}
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" /> Grid
+                </button>
+                <button 
+                  onClick={() => setLayoutMode('stacked')}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-all border ${layoutMode === 'stacked' ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-600 dark:text-indigo-400' : 'bg-slate-50/50 dark:bg-slate-800/40 text-slate-300 dark:text-slate-500 border-transparent'}`}
+                >
+                  <LayoutList className="w-3.5 h-3.5" /> List
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <label className="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-[0.15em] block ml-1">Text Settings</label>
+            
+            <div className="space-y-3">
+              {[
+                { id: 'turkish', label: 'Turkish', value: turkishFont, setter: setTurkishFont, size: turkishFontSize, sizeSetter: setTurkishFontSize, options: turkishOptions, defaultSize: DEFAULT_SIZES?.turkish },
+                { id: 'kurdish', label: 'Kurdish', value: kurdishFont, setter: setKurdishFont, size: kurdishFontSize, sizeSetter: setKurdishFontSize, options: arabicOptions, defaultSize: DEFAULT_SIZES?.kurdish },
+                { id: 'ottoman', label: 'Ottoman', value: ottomanFont, setter: setOttomanFont, size: ottomanFontSize, sizeSetter: setOttomanFontSize, options: arabicOptions, defaultSize: DEFAULT_SIZES?.ottoman },
+              ].map(group => {
+                const isExpanded = expandedLangs.includes(group.id);
+                return (
+                  <div key={group.id} className={`overflow-hidden rounded-[2rem] border transition-all ${isExpanded ? 'border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/20' : 'border-slate-100 dark:border-slate-800 bg-transparent'}`}>
+                    <button 
+                      onClick={() => toggleExpanded(group.id)}
+                      className="w-full flex items-center justify-between p-4 px-5 text-left"
+                    >
                       <div className="flex items-center gap-3">
-                        <div className="w-7 h-7 rounded-lg bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 flex items-center justify-center shadow-sm">
-                          <span className="text-[9px] font-black text-slate-400 dark:text-slate-500">{group.label[0]}</span>
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-[10px] ${isExpanded ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500'}`}>
+                          {group.label[0]}
                         </div>
                         <span className="text-[10px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest">{group.label}</span>
                       </div>
-                      <SizeStepper value={group.size} setter={group.sizeSetter} defaultSize={group.defaultSize} />
-                    </div>
-                    <FontSelector value={group.value} setter={group.setter} options={group.options} />
+                      <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                    </button>
+                    
+                    <motion.div
+                      initial={false}
+                      animate={{ height: isExpanded ? 'auto' : 0, opacity: isExpanded ? 1 : 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="p-5 pt-0 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Font Size</span>
+                          <SizeStepper value={group.size} setter={group.sizeSetter} defaultSize={group.defaultSize} />
+                        </div>
+                        <FontSelector value={group.value} setter={group.setter} options={group.options} />
+                      </div>
+                    </motion.div>
                   </div>
-                ))}
-              </div>
-            </section>
-          </div>
-          
-          <div className="p-6 pt-2">
-            <button 
-              onClick={onClose}
-              className="w-full py-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-lg hover:bg-slate-800 transition-all active:scale-[0.98]"
-            >
-              Apply Settings
-            </button>
-          </div>
-        </motion.div>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+        
+        <div className={`p-6 border-t mt-auto ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-50'}`}>
+          <button 
+            onClick={onClose}
+            className="w-full py-4 bg-slate-900 dark:bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-lg hover:opacity-90 transition-all active:scale-[0.98]"
+          >
+            Apply & Close
+          </button>
+        </div>
+      </motion.div>
       </motion.div>
     </AnimatePresence>
   );
 };
+
 
 export default function App() {
   const [sentences, setSentences] = useState<Sentence[]>([]);
@@ -694,6 +801,19 @@ export default function App() {
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const [activeBookItem, setActiveBookItem] = useState<{ bookId: string; itemId: string } | null>({ bookId: 'sozler', itemId: 'soz-1' });
   const [editingEntry, setEditingEntry] = useState<Sentence | null>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 400);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
@@ -710,10 +830,14 @@ export default function App() {
     const root = window.document.documentElement;
     if (isDarkMode) {
       root.classList.add('dark');
+      root.style.colorScheme = 'dark';
       localStorage.setItem('theme', 'dark');
+      document.body.style.backgroundColor = '#0f172a'; // slate-900
     } else {
       root.classList.remove('dark');
+      root.style.colorScheme = 'light';
       localStorage.setItem('theme', 'light');
+      document.body.style.backgroundColor = '#ffffff';
     }
   }, [isDarkMode]);
 
@@ -791,6 +915,8 @@ export default function App() {
 
   // Firestore Listener
   useEffect(() => {
+    if (loading) return;
+    
     const q = query(collection(db, 'sentences'), orderBy('createdAt', 'asc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({
@@ -802,7 +928,7 @@ export default function App() {
       handleFirestoreError(error, OperationType.LIST, 'sentences');
     });
     return () => unsubscribe();
-  }, []);
+  }, [loading]);
 
   // Keyboard Navigation
   useEffect(() => {
@@ -906,9 +1032,9 @@ export default function App() {
   }
 
   return (
-    <div className={`min-h-screen ${isDarkMode ? 'dark bg-slate-950 transition-colors duration-300' : 'bg-slate-50'} text-slate-900 dark:text-slate-100 font-sans selection:bg-indigo-100 dark:selection:bg-indigo-500/30 pb-20`} onClick={() => { setActiveHighlight(null); setShowUserMenu(false); setActiveMenu(null); }}>
+    <div className={`min-h-screen ${isDarkMode ? 'dark bg-[#1e293b]' : 'bg-slate-50'} text-slate-900 dark:text-slate-50 font-sans selection:bg-indigo-100 dark:selection:bg-indigo-500/30 pb-20 transition-colors duration-300`} onClick={() => { setActiveHighlight(null); setShowUserMenu(false); setActiveMenu(null); }}>
       {/* Top Header */}
-      <header className="sticky top-0 z-50 w-full bg-white/80 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 transition-colors duration-300">
+      <header className={`sticky top-0 z-50 w-full border-b backdrop-blur-md transition-colors duration-300 ${isDarkMode ? 'bg-[#0f172a]/80 border-slate-800' : 'bg-white/80 border-slate-200'}`}>
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button 
@@ -931,20 +1057,20 @@ export default function App() {
                 <h1 className="text-lg font-black tracking-tight text-slate-900 dark:text-white leading-none">Ya Hakeem</h1>
                 <p className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mt-0.5">Risale-i Nur</p>
               </div>
-                <div className="hidden lg:flex items-center px-3 py-1.5 bg-slate-50 dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 self-center">
-                  <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tighter">
+                <div className={`hidden lg:flex items-center px-3 py-1.5 rounded-full border self-center ${isDarkMode ? 'bg-slate-900/80 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                  <span className={`text-[9px] font-black uppercase tracking-tighter ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                     {activeBook?.title}
                   </span>
-                  <span className="mx-1.5 text-slate-300 dark:text-slate-700">/</span>
+                  <span className={`mx-1.5 ${isDarkMode ? 'text-slate-800' : 'text-slate-300'}`}>/</span>
                   {activeParentItem && (
                     <>
-                      <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-tighter">
+                      <span className={`text-[9px] font-black uppercase tracking-tighter ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>
                         {activeParentItem.title}
                       </span>
-                      <span className="mx-1.5 text-slate-300 dark:text-slate-700">/</span>
+                      <span className={`mx-1.5 ${isDarkMode ? 'text-slate-800' : 'text-slate-300'}`}>/</span>
                     </>
                   )}
-                  <span className={`text-[9px] font-black uppercase tracking-tighter ${activeParentItem ? 'text-indigo-600 dark:text-indigo-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                  <span className={`text-[9px] font-black uppercase tracking-tighter ${activeParentItem ? (isDarkMode ? 'text-indigo-400' : 'text-indigo-600') : (isDarkMode ? 'text-emerald-400' : 'text-emerald-600')}`}>
                     {activeItem?.title}
                   </span>
                 </div>
@@ -952,62 +1078,19 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1 sm:gap-3">
-             <button 
-              onClick={(e) => { e.stopPropagation(); setIsDarkMode(!isDarkMode); }}
-              className="p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
-              aria-label="Toggle theme"
-             >
-               {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-             </button>
-
-            {/* Desktop Actions */}
-            <div className="hidden md:flex items-center gap-4 pr-1 sm:pr-4 border-r border-slate-200 dark:border-slate-800">
-               <button 
-                onClick={(e) => { e.stopPropagation(); setShowSettingsSheet(true); }}
-                className="flex items-center gap-2 px-3 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all font-black text-[10px] uppercase tracking-widest"
-               >
-                 <Settings2 className="w-4 h-4" />
-                 Display
-               </button>
-               
-               <div className="flex items-center gap-1.5">
-                 {(['ottoman', 'sorani', 'turkish'] as Language[]).map(l => (
-                   <button
-                    key={l}
-                    onClick={() => toggleLang(l)}
-                    className={`px-2.5 py-1 text-[10px] font-black uppercase rounded-lg border transition-all ${
-                      visibleLangs.includes(l) 
-                        ? `${l === 'ottoman' ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : l === 'sorani' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'}` 
-                        : 'bg-white border-slate-200 text-slate-300 shadow-sm'
-                    }`}
-                   >
-                    {l.slice(0,3)}
-                   </button>
-                 ))}
-               </div>
-            </div>
-
-            {/* Mobile Actions */}
-            <div className="flex md:hidden items-center gap-1">
-              <button 
-                onClick={(e) => { e.stopPropagation(); setShowSettingsSheet(true); }}
-                className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-                aria-label="Display Settings"
-              >
-                <Settings2 className="w-5 h-5" />
-              </button>
-            </div>
-
             {/* Auth */}
             <div className="flex items-center gap-2">
               {user ? (
-                <div className="relative">
+                <div className="flex items-center gap-2">
+                  <div className="hidden sm:flex flex-col items-end mr-1 text-right">
+                    <span className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-tighter truncate max-w-[100px]">{user.displayName}</span>
+                    <span className="text-[8px] font-bold text-emerald-600 dark:text-emerald-500 uppercase tracking-widest leading-none">Contributor</span>
+                  </div>
                   <button 
                     onClick={(e) => { e.stopPropagation(); setShowUserMenu(!showUserMenu); }}
-                    className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 pl-1 pr-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors"
+                    className="flex items-center justify-center bg-slate-50 dark:bg-slate-800 p-0.5 rounded-full border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors"
                   >
-                    <img src={user.photoURL || ''} alt="" className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-white dark:border-slate-700 shadow-sm" />
-                    <span className="hidden sm:block text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-tighter truncate max-w-[60px]">{user.displayName?.split(' ')[0]}</span>
+                    <img src={user.photoURL || ''} alt="" className="w-8 h-8 rounded-full border border-white dark:border-slate-700 shadow-sm" />
                   </button>
                   
                   <AnimatePresence>
@@ -1016,7 +1099,7 @@ export default function App() {
                         initial={{ opacity: 0, y: 10, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                        className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 z-50 overflow-hidden py-1"
+                        className="absolute right-12 top-14 mt-2 w-48 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 z-50 overflow-hidden py-1"
                       >
                         <div className="px-4 py-3 border-b border-slate-50 dark:border-slate-800 mb-1">
                           <p className="text-[10px] font-black text-slate-400 dark:text-slate-600 uppercase tracking-widest leading-none mb-1">Signed in as</p>
@@ -1024,7 +1107,7 @@ export default function App() {
                         </div>
                         <button 
                           onClick={() => signOut(auth)}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
+                          className="w-full flex items-center gap-3 px-4 py-3 text-xs font-bold text-rose-500 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
                         >
                           <LogOut className="w-4 h-4" /> Sign Out
                         </button>
@@ -1035,13 +1118,24 @@ export default function App() {
               ) : (
                 <button 
                   onClick={signInWithGoogle}
-                  className="px-5 py-2 bg-emerald-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100"
+                  className="px-5 py-2 bg-emerald-600 dark:bg-emerald-700 text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:opacity-90 transition-all shadow-lg shadow-emerald-100 dark:shadow-none"
                 >
                   Login
                 </button>
               )}
             </div>
+
+            <div className="w-px h-6 bg-slate-200 dark:bg-slate-800 mx-1" />
+
+            <button 
+              onClick={(e) => { e.stopPropagation(); setShowSettingsSheet(true); }}
+              className="p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
+              aria-label="More Settings"
+            >
+              <MoreVertical className="w-5 h-5" />
+            </button>
           </div>
+
         </div>
       </header>
 
@@ -1054,22 +1148,22 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setShowMobileMenu(false)}
-              className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm"
+              className="fixed inset-0 z-[90] bg-slate-900/80 backdrop-blur-md"
             />
             <motion.div 
               initial={{ x: '-100%' }}
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed top-0 left-0 bottom-0 z-[70] w-[280px] bg-white dark:bg-slate-900 shadow-2xl flex flex-col"
+              className={`fixed top-0 left-0 bottom-0 z-[100] w-[280px] shadow-2xl flex flex-col border-r ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
               onClick={e => e.stopPropagation()}
             >
-              <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
                 <div className="flex flex-col">
-                  <h3 className="font-black text-slate-900 dark:text-white tracking-tight">Ya Hakeem</h3>
-                  <p className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mt-0.5">Risale-i Nur</p>
+                  <h3 className={`font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Ya Hakeem</h3>
+                  <p className={`text-[10px] font-black uppercase tracking-widest mt-0.5 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>Risale-i Nur</p>
                 </div>
-                <button onClick={() => setShowMobileMenu(false)} className="p-2 bg-slate-50 dark:bg-slate-800 rounded-full text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors">
+                <button onClick={() => setShowMobileMenu(false)} className={`p-2 rounded-full transition-colors ${isDarkMode ? 'bg-slate-900 text-slate-500 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-900'}`}>
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -1083,6 +1177,7 @@ export default function App() {
                   activeBookItem={activeBookItem}
                   setActiveBookItem={setActiveBookItem}
                   setShowMobileMenu={setShowMobileMenu}
+                  isDarkMode={isDarkMode}
                 />
               </div>
             </motion.div>
@@ -1090,9 +1185,9 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Sidebar - Collapsible on Desktop */}
       <aside 
-        className={`fixed top-14 left-0 bottom-0 z-40 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 ease-in-out hidden lg:block
+        className={`fixed top-14 left-0 bottom-0 z-40 transition-all duration-300 ease-in-out hidden lg:block border-r
+          ${isDarkMode ? 'bg-[#0f172a] border-slate-800' : 'bg-white border-slate-200'}
           ${isSidebarOpen ? 'w-72' : 'w-0 overflow-hidden border-none opacity-0'}
         `}
       >
@@ -1105,6 +1200,7 @@ export default function App() {
             activeBookItem={activeBookItem}
             setActiveBookItem={setActiveBookItem}
             setShowMobileMenu={setShowMobileMenu}
+            isDarkMode={isDarkMode}
           />
         </div>
       </aside>
@@ -1135,10 +1231,10 @@ export default function App() {
                 {activeItem?.title}
               </span>
             </div>
-            <h2 className="text-3xl font-black text-slate-900 tracking-tight leading-tight">
+            <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-tight">
               {activeItem?.title}
               {activeItem?.detail && (
-                <span className="block sm:inline sm:ml-4 text-lg font-medium text-slate-400 italic font-serif opacity-70">
+                <span className="block sm:inline sm:ml-4 text-lg font-medium text-slate-400 dark:text-slate-500 italic font-serif opacity-70">
                    — {activeItem?.detail}
                 </span>
               )}
@@ -1151,14 +1247,16 @@ export default function App() {
               {paginatedSentences.map((sentence, sIdx) => {
                 const visibleCount = Object.keys(LANG_META).filter(l => visibleLangs.includes(l as Language)).length;
                 return (
-                  <motion.div
-                    key={sentence.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.98 }}
-                    transition={{ delay: (sIdx % entriesPerPage) * 0.05 }}
-                    className="group relative bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden hover:shadow-2xl hover:border-emerald-100 dark:hover:border-emerald-900/50 transition-all duration-300"
-                  >
+                      <motion.div
+                        key={sentence.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.98 }}
+                        transition={{ 
+                          delay: (sIdx % entriesPerPage) * 0.05
+                        }}
+                        className={`group relative rounded-3xl border overflow-hidden transition-all duration-300 ${isDarkMode ? 'bg-slate-800/80 border-slate-700 hover:border-emerald-500/40 shadow-xl' : 'bg-white border-slate-200 hover:shadow-2xl hover:border-emerald-200'}`}
+                      >
             <div className={`p-6 sm:p-8 grid gap-10 ${
               layoutMode === 'side-by-side' 
                 ? visibleCount === 1 ? 'grid-cols-1' : visibleCount === 2 ? 'md:grid-cols-2' : 'lg:grid-cols-3' 
@@ -1200,7 +1298,7 @@ export default function App() {
                                       relative px-2 py-1.5 rounded-xl transition-all duration-200 cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-indigo-400
                                       ${wordFont}
                                       ${isClicked ? 'bg-indigo-600 text-white shadow-xl ring-2 ring-indigo-600 z-10 scale-105' : ''}
-                                      ${isLinked ? 'bg-emerald-50 dark:bg-emerald-900/40 ring-1 ring-emerald-200 dark:ring-emerald-800 text-emerald-900 dark:text-emerald-300 font-bold' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'}
+                                      ${isLinked ? 'bg-emerald-50 dark:bg-emerald-500/20 ring-1 ring-emerald-200 dark:ring-emerald-500/30 text-emerald-900 dark:text-emerald-300 font-bold shadow-sm' : 'text-slate-600 dark:text-slate-100 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700/50'}
                                     `}
                                   >
                                     {word || '—'}
@@ -1266,15 +1364,32 @@ export default function App() {
                                 Feedback
                               </button>
 
-                              {user?.uid === sentence.authorId && (
+                              {user && (
                                 <>
                                   <div className="mx-3 my-1 border-t border-slate-50 dark:border-slate-800" />
                                   <button 
                                     onClick={(e) => { e.stopPropagation(); setEditingEntry(sentence); setShowCMS(true); setActiveMenu(null); }}
-                                    className="w-full flex items-center gap-3 px-4 py-3 text-[10px] font-black text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors uppercase tracking-widest text-left"
+                                    className="w-full flex items-center gap-3 px-4 py-3 text-[10px] font-black text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors uppercase tracking-widest text-left"
                                   >
                                     <Edit3 className="w-4 h-4" />
                                     Edit Entry
+                                  </button>
+                                  <button 
+                                    onClick={async (e) => { 
+                                      e.stopPropagation(); 
+                                      if(confirm("Delete this entry permanently?")) {
+                                        try {
+                                          await deleteDoc(doc(db, 'sentences', sentence.id));
+                                          setActiveMenu(null);
+                                        } catch (err) {
+                                          handleFirestoreError(err, OperationType.DELETE, 'sentences');
+                                        }
+                                      }
+                                    }}
+                                    className="w-full flex items-center gap-3 px-4 py-3 text-[10px] font-black text-rose-500 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors uppercase tracking-widest text-left"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                    Delete
                                   </button>
                                 </>
                               )}
@@ -1368,13 +1483,13 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setActiveMenu(null)}
-              className="fixed inset-0 z-[80] bg-slate-950/40 backdrop-blur-sm sm:hidden"
+              className="fixed inset-0 z-[80] bg-slate-900/40 backdrop-blur-sm sm:hidden"
             />
             <motion.div
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
-              className="fixed bottom-0 left-0 right-0 z-[90] bg-white dark:bg-slate-900 rounded-t-[32px] p-6 pb-12 sm:hidden overflow-hidden"
+              className={`fixed bottom-0 left-0 right-0 z-[90] rounded-t-[32px] p-6 pb-12 sm:hidden overflow-hidden ${isDarkMode ? 'bg-slate-900 shadow-2xl' : 'bg-white border-t border-slate-100'}`}
               onClick={e => e.stopPropagation()}
             >
               <div className="w-12 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full mx-auto mb-8" />
@@ -1390,40 +1505,67 @@ export default function App() {
                           navigator.clipboard.writeText(formatSentenceForShare(sentence));
                           setActiveMenu(null);
                         }}
-                        className="w-full flex items-center gap-4 p-5 rounded-2xl bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-black uppercase text-[10px] tracking-widest"
+                        className="w-full flex items-center gap-4 p-4 text-[11px] font-black text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-colors uppercase tracking-widest text-left"
                       >
-                        <Copy className="w-5 h-5" /> Copy Text
+                        <div className="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl">
+                          <Copy className="w-5 h-5" />
+                        </div>
+                        Copy Parity Text
                       </button>
+
                       <button 
                         onClick={(e) => {
                           e.stopPropagation();
                           handleShare(sentence);
                           setActiveMenu(null);
                         }}
-                        className="w-full flex items-center gap-4 p-5 rounded-2xl bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-black uppercase text-[10px] tracking-widest"
+                        className="w-full flex items-center gap-4 p-4 text-[11px] font-black text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-colors uppercase tracking-widest text-left"
                       >
-                        <Share2 className="w-5 h-5" /> Share
+                        <div className="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl">
+                          <Share2 className="w-5 h-5" />
+                        </div>
+                        Share Analysis
                       </button>
+
                       <button 
                         onClick={(e) => { e.stopPropagation(); setFeedbackSentence(sentence); setShowFeedbackModal(true); setActiveMenu(null); }}
-                        className="w-full flex items-center gap-4 p-5 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-black uppercase text-[10px] tracking-widest"
+                        className="w-full flex items-center gap-4 p-4 text-[11px] font-black text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 rounded-2xl transition-colors uppercase tracking-widest text-left"
                       >
-                        <MessageSquare className="w-5 h-5" /> Feedback
+                        <div className="p-2.5 bg-indigo-50 dark:bg-indigo-900/40 rounded-xl">
+                          <MessageSquare className="w-5 h-5" />
+                        </div>
+                        Submit Feedback
                       </button>
-                      {user?.uid === sentence.authorId && (
+
+                      {user && (
                         <>
-                          <div className="py-2" />
                           <button 
-                            onClick={() => { setEditingEntry(sentence); setShowCMS(true); setActiveMenu(null); }}
-                            className="w-full flex items-center gap-4 p-5 rounded-2xl bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 font-black uppercase text-[10px] tracking-widest"
+                            onClick={(e) => { e.stopPropagation(); setEditingEntry(sentence); setShowCMS(true); setActiveMenu(null); }}
+                            className="w-full flex items-center gap-4 p-4 text-[11px] font-black text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-2xl transition-colors uppercase tracking-widest text-left"
                           >
-                            <Edit3 className="w-5 h-5" /> Edit Entry
+                            <div className="p-2.5 bg-emerald-50 dark:bg-emerald-900/40 rounded-xl">
+                              <Edit3 className="w-5 h-5" />
+                            </div>
+                            Edit Lexical Entry
                           </button>
                           <button 
-                            onClick={() => { if(confirm("Delete entry?")) deleteDoc(doc(db, 'sentences', activeMenu!)); setActiveMenu(null); }}
-                            className="w-full flex items-center gap-4 p-5 rounded-2xl bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 font-black uppercase text-[10px] tracking-widest"
+                            onClick={async (e) => { 
+                              e.stopPropagation(); 
+                              if(confirm("Delete this entry permanently?")) {
+                                try {
+                                  await deleteDoc(doc(db, 'sentences', sentence.id));
+                                  setActiveMenu(null);
+                                } catch (err) {
+                                  handleFirestoreError(err, OperationType.DELETE, 'sentences');
+                                }
+                              }
+                            }}
+                            className="w-full flex items-center gap-4 p-4 text-[11px] font-black text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-2xl transition-colors uppercase tracking-widest text-left"
                           >
-                            <Trash2 className="w-5 h-5" /> Delete Permanently
+                            <div className="p-2.5 bg-rose-50 dark:bg-rose-900/40 rounded-xl">
+                              <Trash2 className="w-5 h-5" />
+                            </div>
+                            Delete Permanently
                           </button>
                         </>
                       )}
@@ -1457,6 +1599,8 @@ export default function App() {
         setLayoutMode={setLayoutMode}
         visibleLangs={visibleLangs}
         toggleLang={toggleLang}
+        isDarkMode={isDarkMode}
+        setIsDarkMode={setIsDarkMode}
         DEFAULT_SIZES={DEFAULT_SIZES}
       />
 
@@ -1472,6 +1616,23 @@ export default function App() {
         </motion.button>
       )}
 
+      {/* Floating Back to Top */}
+      <AnimatePresence>
+        {showScrollTop && (
+            <motion.button
+            initial={{ opacity: 0, scale: 0.8, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8, y: 20 }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={(e) => { e.stopPropagation(); scrollToTop(); }}
+            className={`fixed bottom-24 right-8 z-[60] p-4 rounded-2xl shadow-2xl transition-all flex items-center justify-center ${isDarkMode ? 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-indigo-500/20' : 'bg-slate-900 text-white hover:bg-slate-800 shadow-slate-200'}`}
+          >
+            <ArrowUp className="w-5 h-5" />
+          </motion.button>
+        )}
+      </AnimatePresence>
+
       {/* Lexical Link Drawer */}
       <AnimatePresence>
         {activeHighlight && (
@@ -1482,7 +1643,7 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setActiveHighlight(null)}
-              className="fixed inset-0 z-[60] bg-slate-950/20 backdrop-blur-sm lg:bg-transparent lg:backdrop-blur-none"
+              className="fixed inset-0 z-[60] bg-slate-900/20 backdrop-blur-sm lg:bg-transparent lg:backdrop-blur-none"
             />
             <motion.div
               initial={{ y: "100%" }}
@@ -1492,21 +1653,21 @@ export default function App() {
               onClick={e => e.stopPropagation()}
               className="fixed bottom-0 left-0 right-0 z-[70] p-4 lg:p-8 flex justify-center pointer-events-none"
             >
-              <div className="w-full max-w-2xl bg-white dark:bg-slate-900 lg:bg-slate-900/95 lg:backdrop-blur-xl rounded-t-[2.5rem] lg:rounded-[2.5rem] shadow-2xl border border-slate-100 dark:border-slate-800 lg:border-white/10 pointer-events-auto overflow-hidden transition-colors">
+              <div className={`w-full max-w-2xl lg:bg-slate-900/95 lg:backdrop-blur-xl rounded-t-[2.5rem] lg:rounded-[2.5rem] shadow-2xl border pointer-events-auto overflow-hidden transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 lg:border-white/10' : 'bg-white border-slate-100'}`}>
                 <div className="p-6 lg:p-8">
                   <div className="flex items-center justify-between mb-8">
                     <div className="flex items-center gap-3">
-                      <div className="p-2.5 bg-indigo-50 dark:bg-indigo-900/30 lg:bg-white/10 rounded-xl">
+                      <div className="p-2.5 bg-indigo-50 dark:bg-indigo-900/40 lg:bg-white/10 rounded-xl">
                         <Link2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400 lg:text-indigo-400" />
                       </div>
                       <div>
                         <h3 className="font-black text-slate-900 dark:text-white uppercase tracking-[0.2em] text-[10px]">Lexical Harmony</h3>
-                        <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Cross-Linguistic Mapping</p>
+                        <p className={`text-[9px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-400'}`}>Cross-Linguistic Mapping</p>
                       </div>
                     </div>
                     <button 
                       onClick={() => setActiveHighlight(null)}
-                      className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 lg:hover:bg-white/10 rounded-full transition-colors text-slate-300 dark:text-slate-600 lg:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 lg:hover:text-white"
+                      className={`p-2 rounded-full transition-colors ${isDarkMode ? 'hover:bg-white/10 text-slate-500 hover:text-white' : 'hover:bg-slate-100 text-slate-300 hover:text-slate-600'}`}
                     >
                       <X className="w-5 h-5" />
                     </button>
@@ -1526,8 +1687,8 @@ export default function App() {
                            key={l} 
                            className={`p-5 rounded-3xl transition-all duration-500 ${
                              isSource 
-                               ? 'bg-slate-50 lg:bg-white/5 border border-slate-100 lg:border-white/10 ring-2 ring-indigo-500/20' 
-                               : 'bg-white lg:bg-transparent border border-transparent'
+                               ? (isDarkMode ? 'bg-slate-700/50 border border-slate-600 ring-2 ring-indigo-500/20 shadow-inner' : 'bg-slate-50 border border-slate-100 ring-2 ring-indigo-500/20') 
+                               : (isDarkMode ? 'bg-slate-800/40 border border-slate-700/50 hover:bg-slate-800/60' : 'bg-white lg:bg-transparent border border-transparent')
                            }`}
                          >
                            <div className="flex items-center justify-between mb-4">
@@ -1565,6 +1726,7 @@ export default function App() {
             sentence={feedbackSentence}
             metadata={getMetadataString(feedbackSentence)}
             onClose={() => { setShowFeedbackModal(false); setFeedbackSentence(null); }}
+            isDarkMode={isDarkMode}
           />
         )}
       </AnimatePresence>
@@ -1573,6 +1735,7 @@ export default function App() {
         {showCMS && user && (
           <CMSModal 
             user={user}
+            isDarkMode={isDarkMode}
             initialData={editingEntry}
             onClose={() => { setShowCMS(false); setEditingEntry(null); }} 
             onSave={async (data) => {
@@ -1591,7 +1754,9 @@ export default function App() {
                 setEditingEntry(null);
                 setShowSavedToast(true);
                 setTimeout(() => setShowSavedToast(false), 2000);
-              } catch (e) { handleFirestoreError(e, OperationType.CREATE, 'sentences'); }
+              } catch (e) { 
+                handleFirestoreError(e, editingEntry ? OperationType.UPDATE : OperationType.CREATE, 'sentences'); 
+              }
             }}
           />
         )}
@@ -1602,7 +1767,7 @@ export default function App() {
 
 // --- Feedback Modal Component ---
 
-function FeedbackModal({ sentence, metadata, onClose }: { sentence: Sentence, metadata: string, onClose: () => void }) {
+function FeedbackModal({ sentence, metadata, onClose, isDarkMode }: { sentence: Sentence, metadata: string, onClose: () => void, isDarkMode: boolean }) {
   const [formData, setFormData] = useState({ name: '', contact: '', text: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -1620,7 +1785,7 @@ function FeedbackModal({ sentence, metadata, onClose }: { sentence: Sentence, me
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[1000] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+      className={`fixed inset-0 z-[1000] backdrop-blur-sm flex items-center justify-center p-4 ${isDarkMode ? 'bg-slate-900/80' : 'bg-slate-900/40'}`}
       onClick={onClose}
     >
       <motion.div
@@ -1628,12 +1793,12 @@ function FeedbackModal({ sentence, metadata, onClose }: { sentence: Sentence, me
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
         onClick={e => e.stopPropagation()}
-        className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-100 dark:border-slate-800"
+        className={`w-full max-w-lg bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-100 dark:border-slate-800`}
       >
-        <div className="p-8 pb-4">
+        <div className={`p-8 pb-4 ${isDarkMode ? 'bg-slate-800 text-slate-100' : 'bg-white text-slate-900'}`}>
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl">
+              <div className="p-2 bg-indigo-50 dark:bg-indigo-900/40 rounded-xl">
                 <MessageSquare className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
               </div>
               <div>
@@ -1707,12 +1872,28 @@ function FeedbackModal({ sentence, metadata, onClose }: { sentence: Sentence, me
 
 interface CMSModalProps {
   user: User;
+  isDarkMode: boolean;
   initialData?: Sentence | null;
   onClose: () => void;
   onSave: (data: Omit<Sentence, 'id' | 'authorId' | 'createdAt' | 'bookId' | 'itemId'>) => Promise<void>;
 }
 
-function CMSModal({ user, initialData, onClose, onSave }: CMSModalProps) {
+function CMSModal({ user, isDarkMode, initialData, onClose, onSave }: CMSModalProps) {
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const handleModalScroll = () => {
+    if (scrollRef.current) {
+      setShowScrollTop(scrollRef.current.scrollTop > 300);
+    }
+  };
+
+  const scrollToModalTop = () => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
   const [inputs, setInputs] = useState<Record<Language, string>>(() => {
     if (initialData) {
       return {
@@ -1730,6 +1911,7 @@ function CMSModal({ user, initialData, onClose, onSave }: CMSModalProps) {
   const [wordMaps, setWordMaps] = useState<WordMap[]>(initialData ? initialData.wordMap : [{ ottoman: null, sorani: null, turkish: null }]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [aiProcessing, setAiProcessing] = useState<string | null>(null);
 
   const tokens = useMemo(() => {
     return {
@@ -1738,14 +1920,85 @@ function CMSModal({ user, initialData, onClose, onSave }: CMSModalProps) {
       turkish: inputs.turkish.trim().split(/\s+/).filter(Boolean)
     };
   }, [inputs]);
+  const playSuccessSound = () => {
+    try {
+      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2432/2432-preview.mp3');
+      audio.volume = 0.4;
+      audio.play().catch(e => console.log('Audio play failed:', e));
+    } catch (e) {}
+  };
+
+  const playErrorSound = () => {
+    try {
+      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3');
+      audio.volume = 0.3;
+      audio.play().catch(e => console.log('Audio play failed:', e));
+    } catch (e) {}
+  };
+
+  const handleTranslate = async () => {
+    if (!inputs.ottoman.trim()) {
+      setError("Please provide Ottoman text first.");
+      playErrorSound();
+      return;
+    }
+    setAiProcessing('translating');
+    setError(null);
+    try {
+      const translated = await translateToSorani(inputs.ottoman);
+      setInputs(prev => ({ ...prev, sorani: translated }));
+      playSuccessSound();
+    } catch (err) {
+      setError("AI Translation failed. Please try again.");
+      playErrorSound();
+    } finally {
+      setAiProcessing(null);
+    }
+  };
+
+  const handleAutoMap = async () => {
+    if (!tokens.ottoman.length || !tokens.sorani.length || !tokens.turkish.length) {
+      setError("Please provide text for all languages before mapping.");
+      playErrorSound();
+      return;
+    }
+    setAiProcessing('mapping');
+    setError(null);
+    try {
+      const mappings = await autoMapIndices(tokens.ottoman, tokens.sorani, tokens.turkish);
+      setWordMaps(mappings);
+      playSuccessSound();
+    } catch (err) {
+      setError("AI Word Mapping failed.");
+      playErrorSound();
+    } finally {
+      setAiProcessing(null);
+    }
+  };
+
+  const syncOttomanTurkish = () => {
+    const maxLen = Math.max(tokens.ottoman.length, tokens.turkish.length);
+    const newMaps: WordMap[] = [];
+    for (let i = 0; i < maxLen; i++) {
+      newMaps.push({
+        ottoman: i < tokens.ottoman.length ? i : null,
+        turkish: i < tokens.turkish.length ? i : null,
+        sorani: null
+      });
+    }
+    setWordMaps(newMaps);
+    playSuccessSound();
+  };
 
   const handleSave = async () => {
     if (!tokens.ottoman.length || !tokens.sorani.length || !tokens.turkish.length) {
       setError("Please provide text for all three languages.");
+      playErrorSound();
       return;
     }
     
     setSaving(true);
+    setError(null);
     try {
       await onSave({
         ottoman: tokens.ottoman,
@@ -1753,8 +2006,17 @@ function CMSModal({ user, initialData, onClose, onSave }: CMSModalProps) {
         turkish: tokens.turkish,
         wordMap: wordMaps.filter(m => m.ottoman !== null || m.sorani !== null || m.turkish !== null)
       });
-    } catch (err) {
-      setError("Failed to save entry.");
+      playSuccessSound();
+    } catch (err: any) {
+      let msg = "Failed to save entry.";
+      try {
+        const detail = JSON.parse(err.message);
+        if (detail.error) msg = `Error: ${detail.error}`;
+      } catch (e) {
+        if (err.message) msg = err.message;
+      }
+      setError(msg);
+      playErrorSound();
     } finally {
       setSaving(false);
     }
@@ -1765,133 +2027,203 @@ function CMSModal({ user, initialData, onClose, onSave }: CMSModalProps) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[1000] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+      className={`fixed inset-0 z-[1000] backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 ${isDarkMode ? 'bg-slate-900/80' : 'bg-slate-900/40'}`}
       onClick={onClose}
     >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        onClick={e => e.stopPropagation()}
-        className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl p-8 max-h-[90vh] overflow-y-auto"
-      >
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-3">
-            <Edit3 className="w-5 h-5 text-emerald-500" />
-            <h2 className="text-xl font-bold text-slate-800">{initialData ? 'Edit Sentence Pair' : 'Add New Parallel Entry'}</h2>
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-all">
-            <X className="w-6 h-6 text-slate-400" />
-          </button>
-        </div>
-
-        <div className="space-y-6">
-          {(['ottoman', 'sorani', 'turkish'] as Language[]).map(lang => (
-            <div key={lang} className="space-y-2">
-              <label className="text-xs font-black uppercase text-slate-400 tracking-wider">
-                {LANG_META[lang].label}
-              </label>
-              <textarea
-                value={inputs[lang]}
-                onChange={e => setInputs(prev => ({ ...prev, [lang]: e.target.value }))}
-                dir={LANG_META[lang].rtl ? 'rtl' : 'ltr'}
-                className={`w-full p-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-slate-900 focus:border-transparent outline-none transition-all resize-none
-                  ${LANG_META[lang].rtl ? 'font-serif text-xl' : 'text-sm font-medium'}
-                `}
-                rows={2}
-                placeholder={`Enter ${LANG_META[lang].label} text here...`}
-              />
-              <div className="flex flex-wrap gap-2 pt-1">
-                {tokens[lang].map((t, i) => (
-                  <span key={i} className="px-2 py-1 bg-slate-100 text-[10px] font-bold text-slate-500 rounded border border-slate-200">
-                    <span className="text-slate-300 mr-1">{i}</span> {t}
-                  </span>
-                ))}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              onClick={e => e.stopPropagation()}
+              className={`w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] border overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-100 text-slate-900'}`}
+            >
+            {/* Modal Header */}
+            <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-100 bg-slate-50/30'} backdrop-blur-md`}>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-500 rounded-xl shadow-lg shadow-emerald-500/20">
+                  <Edit3 className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-black uppercase tracking-[0.1em] text-slate-800 dark:text-white">{initialData ? 'Edit Sentence Pair' : 'New Parallel Entry'}</h2>
+                  <p className="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-tight">Data Integrity Control</p>
+                </div>
               </div>
+              <button 
+                onClick={onClose} 
+                className={`p-2 rounded-xl transition-all ${isDarkMode ? 'hover:bg-slate-700 text-slate-500' : 'hover:bg-slate-100 text-slate-400 font-bold hover:text-slate-900'}`}
+              >
+                <X className="w-6 h-6 text-slate-400 dark:text-slate-500" />
+              </button>
             </div>
-          ))}
-
-          <div className="pt-8 border-t border-slate-100">
-            <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-              Word Mappings
-              <span className="text-[10px] font-medium text-slate-400 px-2 py-0.5 bg-slate-50 border border-slate-200 rounded">Manual Alignment</span>
-            </h3>
-            
-            <div className="space-y-3">
-              {wordMaps.map((map, i) => (
-                <div key={i} className="flex flex-wrap items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
-                  {Object.entries(LANG_META).map(([langKey]) => {
-                    const l = langKey as Language;
-                    return (
-                      <div key={l} className="flex items-center gap-2">
-                        <span className="text-[10px] font-black text-slate-400 uppercase w-12">{l.slice(0,3)}</span>
-                        <input
-                          type="number"
-                          placeholder="Idx"
-                          value={map[l] ?? ''}
-                          onChange={e => {
-                            const val = e.target.value === '' ? null : parseInt(e.target.value);
-                            setWordMaps(prev => {
-                              const next = [...prev];
-                              next[i] = { ...next[i], [l]: val };
-                              return next;
-                            });
-                          }}
-                          className="w-16 p-1.5 text-xs border border-slate-200 rounded bg-white"
-                        />
-                      </div>
-                    );
-                  })}
-                  <button 
-                    onClick={() => setWordMaps(prev => prev.filter((_, idx) => idx !== i))}
-                    className="ml-auto p-1.5 text-slate-300 hover:text-red-500 transition-colors"
+    
+            {/* Modal Body (Scrollable) */}
+            <div 
+              ref={scrollRef}
+              onScroll={handleModalScroll}
+              className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-10 font-sans relative"
+            >
+              <AnimatePresence>
+                {showScrollTop && (
+                  <motion.button
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    onClick={(e) => { e.stopPropagation(); scrollToModalTop(); }}
+                    className={`sticky bottom-4 left-1/2 -translate-x-1/2 z-50 p-3 rounded-full shadow-lg transition-all active:scale-95 flex items-center justify-center ${isDarkMode ? 'bg-slate-700 text-white border border-slate-600' : 'bg-slate-100 text-slate-800 border border-slate-200'} opacity-80 hover:opacity-100`}
                   >
-                    <X className="w-4 h-4" />
+                    <ArrowUp className="w-4 h-4" />
+                  </motion.button>
+                )}
+              </AnimatePresence>
+              <div className="space-y-8">
+                {(['ottoman', 'sorani', 'turkish'] as Language[]).map(lang => (
+                  <div key={lang} className="group space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-[0.15em] ml-1">
+                        {LANG_META[lang].label}
+                      </label>
+                      {lang === 'sorani' && (
+                         <button 
+                           onClick={handleTranslate}
+                           disabled={!!aiProcessing}
+                           className="flex items-center gap-2 px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all disabled:opacity-50 border border-indigo-100 dark:border-indigo-800"
+                         >
+                           {aiProcessing === 'translating' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                           {aiProcessing === 'translating' ? 'translating...' : 'AI Translate'}
+                         </button>
+                      )}
+                    </div>
+                    <textarea
+                      value={inputs[lang]}
+                      onChange={e => setInputs(prev => ({ ...prev, [lang]: e.target.value }))}
+                      dir={LANG_META[lang].rtl ? 'rtl' : 'ltr'}
+                      className={`w-full p-5 rounded-[2rem] border focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all resize-none shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white focus:border-indigo-500 placeholder:text-slate-700' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-400 placeholder:text-slate-300'}
+                        ${LANG_META[lang].rtl ? 'font-serif text-2xl leading-relaxed' : 'text-sm font-medium leading-relaxed'}
+                      `}
+                      rows={3}
+                      placeholder={`Enter ${LANG_META[lang].label} text here...`}
+                    />
+                    <div className="flex flex-wrap gap-2 px-2">
+                      {tokens[lang].map((t, i) => (
+                        <span key={i} className={`px-2.5 py-1.5 rounded-xl border flex items-center gap-2 transition-all opacity-80 hover:opacity-100 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                          <span className="text-[8px] font-black uppercase text-indigo-500/50">{i}</span>
+                          <span className={`${LANG_META[lang].rtl ? 'font-serif text-sm' : 'text-[11px] font-bold'}`}>{t}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+      
+                <div className="pt-8 border-t border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h3 className="text-xs font-black uppercase text-slate-800 dark:text-white tracking-[0.1em]">Relational word mapping</h3>
+                      <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase">Synchronize translations</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                    <button 
+                      onClick={handleAutoMap}
+                      disabled={!!aiProcessing}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800 rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-all disabled:opacity-50"
+                    >
+                      {aiProcessing === 'mapping' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                      {aiProcessing === 'mapping' ? 'AI Mapping' : 'Auto Map'}
+                    </button>
+                    <button 
+                      onClick={syncOttomanTurkish}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800 rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all"
+                    >
+                      <Link2 className="w-3.5 h-3.5" />
+                      Link OT-TR
+                    </button>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    {wordMaps.map((map, i) => (
+                      <div key={i} className={`flex items-center gap-4 p-4 rounded-2xl border transition-all ${isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-slate-50 border-slate-200'} group`}>
+                        <div className="flex-1 grid grid-cols-3 gap-3">
+                        {(['ottoman', 'sorani', 'turkish'] as Language[]).map((l) => {
+                          return (
+                            <div key={l} className="space-y-1.5 text-center">
+                              <label className="text-[7px] font-black uppercase text-slate-400 dark:text-slate-600 tracking-tighter">{l}</label>
+                              <input
+                                type="number"
+                                placeholder="—"
+                                value={map[l] ?? ''}
+                                onChange={e => {
+                                  const val = e.target.value === '' ? null : parseInt(e.target.value);
+                                  setWordMaps(prev => {
+                                    const next = [...prev];
+                                    next[i] = { ...next[i], [l]: val };
+                                    return next;
+                                  });
+                                }}
+                                className={`w-full p-2 text-center text-xs font-black rounded-lg border transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-400'}`}
+                              />
+                            </div>
+                          );
+                        })}
+                        </div>
+                        <button 
+                          onClick={() => setWordMaps(prev => prev.filter((_, idx) => idx !== i))}
+                          className="p-2 text-slate-300 dark:text-slate-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <button 
+                    onClick={() => setWordMaps(prev => [...prev, { ottoman: null, sorani: null, turkish: null }])}
+                    className="mt-6 w-full py-4 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-slate-400 dark:text-slate-500 text-[10px] font-black hover:border-indigo-400 dark:hover:border-indigo-800 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all uppercase tracking-[0.2em] bg-transparent"
+                  >
+                    + Append alignment row
                   </button>
                 </div>
-              ))}
+              </div>
             </div>
-            
-            <button 
-              onClick={() => setWordMaps(prev => [...prev, { ottoman: null, sorani: null, turkish: null }])}
-              className="mt-4 w-full py-2.5 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs font-bold hover:border-slate-400 hover:text-slate-600 transition-all uppercase tracking-widest"
-            >
-              + Add Map Row
-            </button>
-          </div>
 
-          {error && (
-            <p className="text-red-500 text-xs font-bold text-center mt-4">{error}</p>
-          )}
-
-          <div className="flex gap-4 pt-8">
-            <button 
-              onClick={onClose}
-              disabled={saving}
-              className="flex-1 py-4 text-sm font-bold text-slate-500 hover:bg-slate-50 rounded-xl transition-all disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button 
-              onClick={handleSave}
-              disabled={saving}
-              className="flex-[2] py-4 bg-slate-900 text-white rounded-xl text-sm font-bold shadow-xl shadow-slate-200 hover:bg-slate-800 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {saving ? (
-                <motion.div 
-                  animate={{ rotate: 360 }}
-                  transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-                  className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full"
-                />
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  Save Sentence
-                </>
+            {/* Modal Footer (Fixed) */}
+            <div className={`p-6 border-t ${isDarkMode ? 'border-slate-700 bg-slate-800/80 shadow-[0_-10px_20px_rgba(0,0,0,0.2)]' : 'border-slate-100 bg-white shadow-[0_-10px_20px_rgba(0,0,0,0.05)]'} backdrop-blur-md`}>
+              {error && (
+                <div className="mb-6 p-4 bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/30 rounded-2xl flex items-center gap-3">
+                  <div className="p-1 px-2 bg-white dark:bg-red-500 rounded-md shadow-sm">
+                    <AlertTriangle className="w-3 h-3 text-red-500 dark:text-white" />
+                  </div>
+                  <p className="grow text-[11px] font-bold text-red-600 dark:text-red-400 leading-tight">{error}</p>
+                </div>
               )}
-            </button>
+    
+              <div className="flex gap-4">
+                <button 
+                  onClick={onClose}
+                  disabled={saving}
+                  className={`flex-1 py-4 text-[10px] font-black uppercase tracking-[0.2em] rounded-2xl transition-all disabled:opacity-50 border ${isDarkMode ? 'hover:bg-slate-700 text-slate-400 border-slate-700' : 'hover:bg-slate-50 text-slate-500 border-slate-100 font-bold hover:text-slate-900 active:scale-95'}`}
+                >
+                  Terminate
+                </button>
+                <button 
+                  onClick={handleSave}
+                  disabled={saving}
+                  className={`flex-[2] py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-3 disabled:opacity-50 ${isDarkMode ? 'bg-indigo-600 text-white hover:bg-indigo-500' : 'bg-slate-900 text-white hover:bg-slate-800 font-bold'}`}
+                >
+                {saving ? (
+                  <motion.div 
+                    animate={{ rotate: 360 }}
+                    transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                    className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full"
+                  />
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    Archive Changes
+                  </>
+                )}
+              </button>
+            </div>
           </div>
-        </div>
       </motion.div>
     </motion.div>
   );
