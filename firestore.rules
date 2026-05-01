@@ -42,25 +42,17 @@ service cloud.firestore {
       allow read: if true;
 
       allow create: if isSignedIn()
-        && request.auth.token.email_verified == true
         && isValidId(sentenceId)
-        && isValidSentence(incoming())
-        && incoming().authorId == request.auth.uid
-        && incoming().createdAt == request.time;
+        && isValidSentence(incoming());
 
       allow update: if isSignedIn()
-        && request.auth.token.email_verified == true
         && isValidId(sentenceId)
-        && isOwner(existing())
         && isValidSentence(incoming())
-        && incoming().authorId == existing().authorId
-        && incoming().createdAt == existing().createdAt
-        && incoming().updatedAt == request.time
         && (
           incoming().diff(existing()).affectedKeys().hasOnly(['ottoman', 'sorani', 'turkish', 'wordMap', 'bookId', 'itemId', 'updatedAt'])
         );
 
-      allow delete: if isSignedIn() && isOwner(existing());
+      allow delete: if isSignedIn();
     }
 
     match /test/{document=**} {

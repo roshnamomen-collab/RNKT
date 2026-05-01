@@ -39,13 +39,18 @@ import {
   Check,
   RefreshCw,
   Sparkles,
-  ArrowUp
+  ArrowUp,
+  Lock,
+  Table as TableIcon,
+  BookOpen,
+  Globe,
+  Chrome
 } from 'lucide-react';
 import { auth, db, signInWithGoogle } from './lib/firebase';
 import { 
   onAuthStateChanged, 
   User, 
-  signOut 
+  signOut
 } from 'firebase/auth';
 import { 
   collection, 
@@ -813,14 +818,47 @@ export default function App() {
   const [activeBookItem, setActiveBookItem] = useState<{ bookId: string; itemId: string } | null>({ bookId: 'sozler', itemId: 'soz-1' });
   const [editingEntry, setEditingEntry] = useState<Sentence | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(window.location.pathname === '/admin');
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [adminError, setAdminError] = useState('');
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
 
+  // Auto-auth if already signed in with admin email
   useEffect(() => {
-    const handleScroll = () => {
-      setShowScrollTop(window.scrollY > 400);
-    };
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+    if (isAdminMode && user && user.email?.toLowerCase() === 'razgar.taib@gmail.com') {
+      setIsAdminAuthenticated(true);
+    }
+  }, [isAdminMode, user]);
+
+  // Sign in with Google for admin actions
+  const handleAdminSignIn = async () => {
+    if (isAuthLoading) return;
+    setIsAuthLoading(true);
+    setAdminError('');
+    
+    try {
+      const signedInUser = await signInWithGoogle();
+      if (signedInUser) {
+        const userEmail = signedInUser.email?.toLowerCase();
+        if (userEmail === 'razgar.taib@gmail.com') {
+          setIsAdminAuthenticated(true);
+          setAdminError('');
+        } else {
+          setAdminError(`Unauthorized: ${signedInUser.email} is not an admin.`);
+          await signOut(auth);
+        }
+      }
+    } catch (err: any) {
+      console.error("Auth failed", err);
+      if (err.code === 'auth/network-request-failed') {
+        setAdminError('Network error. If you are in a preview, try opening the app in a new tab.');
+      } else {
+        setAdminError(`Login failed: ${err.message || 'Unknown error'}`);
+      }
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
 
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1089,49 +1127,24 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1 sm:gap-3">
-            {/* Auth */}
+            {/* Admin */}
             <div className="flex items-center gap-2">
-              {user ? (
-                <div className="flex items-center gap-2">
-                  <div className="hidden sm:flex flex-col items-end mr-1 text-right">
-                    <span className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-tighter truncate max-w-[100px]">{user.displayName}</span>
-                    <span className="text-[8px] font-bold text-emerald-600 dark:text-emerald-500 uppercase tracking-widest leading-none">Contributor</span>
-                  </div>
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); setShowUserMenu(!showUserMenu); }}
-                    className="flex items-center justify-center bg-slate-50 dark:bg-slate-800 p-0.5 rounded-full border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-colors"
-                  >
-                    <img src={user.photoURL || ''} alt="" className="w-8 h-8 rounded-full border border-white dark:border-slate-700 shadow-sm" />
-                  </button>
-                  
-                  <AnimatePresence>
-                    {showUserMenu && (
-                      <motion.div 
-                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                        className="absolute right-12 top-14 mt-2 w-48 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 z-50 overflow-hidden py-1"
-                      >
-                        <div className="px-4 py-3 border-b border-slate-50 dark:border-slate-800 mb-1">
-                          <p className="text-[10px] font-black text-slate-400 dark:text-slate-600 uppercase tracking-widest leading-none mb-1">Signed in as</p>
-                          <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{user.email}</p>
-                        </div>
-                        <button 
-                          onClick={() => signOut(auth)}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-xs font-bold text-rose-500 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
-                        >
-                          <LogOut className="w-4 h-4" /> Sign Out
-                        </button>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              ) : (
+              {isAdminAuthenticated && (
                 <button 
-                  onClick={signInWithGoogle}
-                  className="px-5 py-2 bg-emerald-600 dark:bg-emerald-700 text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:opacity-90 transition-all shadow-lg shadow-emerald-100 dark:shadow-none"
+                  onClick={() => setShowCMS(true)}
+                  className="px-3 py-1.5 bg-emerald-600 text-white rounded-full text-[9px] font-black uppercase tracking-widest hover:bg-emerald-500 transition-all flex items-center gap-2"
                 >
-                  Login
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Sentence
+                </button>
+              )}
+              {isAdminMode && isAdminAuthenticated && (
+                <button 
+                  onClick={() => { setIsAdminAuthenticated(false); signOut(auth); }}
+                  className="p-2 text-slate-400 hover:text-rose-500 transition-colors"
+                  title="Exit Admin Mode"
+                >
+                  <LogOut className="w-5 h-5" />
                 </button>
               )}
             </div>
@@ -1222,8 +1235,70 @@ export default function App() {
           ${isSidebarOpen ? 'lg:ml-72' : 'lg:ml-0'}
         `}
       >
-        {/* Main List */}
-        <main className="max-w-5xl mx-auto px-4 pt-1 pb-4 sm:px-8">
+        {isAdminMode && !isAdminAuthenticated ? (
+          <div className="min-h-[80vh] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`w-full max-w-sm p-8 rounded-[2.5rem] border shadow-2xl ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}
+            >
+              <div className="text-center space-y-6">
+                <div className="mx-auto w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                  <Lock className="w-8 h-8 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-black uppercase tracking-widest">Admin Access</h1>
+                  <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tighter mt-1">Identify yourself to continue</p>
+                </div>
+                
+                <div className="space-y-6">
+                  <div className="space-y-4">
+                    <p className="text-[10px] text-center font-bold text-slate-500 uppercase tracking-widest leading-loose">
+                      Administrative access is restricted to verified accounts. Please sign in with your Google account.
+                    </p>
+                    {user && user.email?.toLowerCase() !== 'razgar.taib@gmail.com' && (
+                      <div className="p-3 rounded-xl bg-orange-50 border border-orange-100 text-center">
+                        <p className="text-[9px] font-black text-orange-600 uppercase tracking-tighter">Current Account:</p>
+                        <p className="text-xs font-bold text-slate-700">{user.email}</p>
+                        <p className="text-[9px] font-bold text-orange-500 mt-1 uppercase italic">Not an admin account</p>
+                      </div>
+                    )}
+                    {adminError && <p className="text-[10px] font-bold text-rose-500 text-center bg-rose-50 p-2 rounded-lg border border-rose-100">{adminError}</p>}
+                  </div>
+                  
+                  <button 
+                    onClick={handleAdminSignIn}
+                    disabled={isAuthLoading}
+                    className="w-full py-4 bg-white text-slate-700 border border-slate-200 rounded-2xl text-[11px] font-bold shadow-sm hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-wait flex items-center justify-center gap-3"
+                  >
+                    {isAuthLoading ? (
+                      <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
+                    ) : (
+                      <div className="relative">
+                        <Chrome className="w-5 h-5 text-blue-500" />
+                      </div>
+                    )}
+                    {isAuthLoading ? (
+                      <span className="uppercase tracking-widest text-[10px]">Authenticating...</span>
+                    ) : (
+                      <span>{user ? 'Switch to Admin Google Account' : 'Sign in with Google'}</span>
+                    )}
+                  </button>
+                </div>
+
+                <button 
+                  onClick={() => { window.location.pathname = '/'; }}
+                  className="text-[10px] font-black uppercase text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors tracking-widest"
+                >
+                  Return to Website
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        ) : (
+          <>
+            {/* Main List */}
+            <main className="max-w-5xl mx-auto px-4 pt-1 pb-4 sm:px-8">
           <header className="mb-2">
             <div className="flex items-center gap-2.5 mb-1 wrap">
               <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-widest text-white shadow-sm ${activeBook?.color || 'bg-slate-900'}`}>
@@ -1375,7 +1450,7 @@ export default function App() {
                                 Feedback
                               </button>
 
-                              {user && (
+                              {isAdminAuthenticated && (
                                 <>
                                   <div className="mx-3 my-1 border-t border-slate-50 dark:border-slate-800" />
                                   <button 
@@ -1454,6 +1529,8 @@ export default function App() {
           </div>
         </footer>
       </main>
+    </>
+    )}
     </div>
 
     {/* Pagination Footer */}
@@ -1548,7 +1625,7 @@ export default function App() {
                         Submit Feedback
                       </button>
 
-                      {user && (
+                      {isAdminAuthenticated && (
                         <>
                           <button 
                             onClick={(e) => { e.stopPropagation(); setEditingEntry(sentence); setShowCMS(true); setActiveMenu(null); }}
@@ -1616,7 +1693,7 @@ export default function App() {
       />
 
       {/* Floating Action Button */}
-      {user && (
+      {isAdminAuthenticated && (
         <motion.button
           whileHover={{ scale: 1.1, rotate: 90 }}
           whileTap={{ scale: 0.9 }}
@@ -1743,7 +1820,7 @@ export default function App() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {showCMS && user && (
+        {showCMS && isAdminAuthenticated && (
           <CMSModal 
             user={user}
             isDarkMode={isDarkMode}
@@ -1759,7 +1836,7 @@ export default function App() {
                 if (editingEntry) {
                    await updateDoc(doc(db, 'sentences', editingEntry.id), { ...payload, updatedAt: serverTimestamp() });
                 } else {
-                   await addDoc(collection(db, 'sentences'), { ...payload, authorId: user.uid, createdAt: serverTimestamp() });
+                   await addDoc(collection(db, 'sentences'), { ...payload, authorId: user?.uid || 'anonymous', createdAt: serverTimestamp() });
                 }
                 setShowCMS(false);
                 setEditingEntry(null);
@@ -1923,6 +2000,12 @@ function CMSModal({ user, isDarkMode, initialData, onClose, onSave }: CMSModalPr
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [aiProcessing, setAiProcessing] = useState<string | null>(null);
+  const [isMappingExpanded, setIsMappingExpanded] = useState(false);
+  const [expandedLangs, setExpandedLangs] = useState<Record<string, boolean>>({
+    ottoman: false,
+    sorani: false,
+    turkish: false
+  });
 
   const tokens = useMemo(() => {
     return {
@@ -2086,112 +2169,174 @@ function CMSModal({ user, isDarkMode, initialData, onClose, onSave }: CMSModalPr
                   </motion.button>
                 )}
               </AnimatePresence>
-              <div className="space-y-8">
+              <div className="space-y-6">
                 {(['ottoman', 'sorani', 'turkish'] as Language[]).map(lang => (
-                  <div key={lang} className="group space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-[0.15em] ml-1">
-                        {LANG_META[lang].label}
-                      </label>
-                      {lang === 'sorani' && (
-                         <button 
-                           onClick={handleTranslate}
-                           disabled={!!aiProcessing}
-                           className="flex items-center gap-2 px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all disabled:opacity-50 border border-indigo-100 dark:border-indigo-800"
-                         >
-                           {aiProcessing === 'translating' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                           {aiProcessing === 'translating' ? 'translating...' : 'AI Translate'}
-                         </button>
+                  <div key={lang} className={`rounded-2xl border transition-all ${isDarkMode ? 'bg-slate-900/20 border-slate-700/50' : 'bg-slate-50/30 border-slate-100'}`}>
+                    <div 
+                      className="p-4 flex items-center justify-between cursor-pointer group/lang"
+                      onClick={() => setExpandedLangs(prev => ({ ...prev, [lang]: !prev[lang] }))}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`p-1.5 rounded-lg transition-all ${expandedLangs[lang] ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600'}`}>
+                          {lang === 'ottoman' ? <BookOpen className="w-3.5 h-3.5" /> : lang === 'sorani' ? <Languages className="w-3.5 h-3.5" /> : <Globe className="w-3.5 h-3.5" />}
+                        </div>
+                        <label className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-[0.15em]">
+                          {LANG_META[lang].label}
+                        </label>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {lang === 'sorani' && !expandedLangs[lang] && inputs.ottoman && (
+                          <span className="text-[8px] font-bold text-indigo-500 uppercase tracking-widest animate-pulse">Auto-translate available</span>
+                        )}
+                        <motion.div animate={{ rotate: expandedLangs[lang] ? 180 : 0 }}>
+                          <ChevronDown className="w-4 h-4 text-slate-400" />
+                        </motion.div>
+                      </div>
+                    </div>
+
+                    <AnimatePresence>
+                      {expandedLangs[lang] && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="px-4 pb-4 space-y-4">
+                            <div className="flex items-center justify-end">
+                              {lang === 'sorani' && (
+                                <button 
+                                  onClick={handleTranslate}
+                                  disabled={!!aiProcessing}
+                                  className="flex items-center gap-2 px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all disabled:opacity-50 border border-indigo-100 dark:border-indigo-800"
+                                >
+                                  {aiProcessing === 'translating' ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                                  {aiProcessing === 'translating' ? 'translating...' : 'AI Translate'}
+                                </button>
+                              )}
+                            </div>
+                            <textarea
+                              value={inputs[lang]}
+                              onChange={e => setInputs(prev => ({ ...prev, [lang]: e.target.value }))}
+                              dir={LANG_META[lang].rtl ? 'rtl' : 'ltr'}
+                              className={`w-full p-5 rounded-[2rem] border focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all resize-none shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white focus:border-indigo-500 placeholder:text-slate-700' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-400 placeholder:text-slate-300'}
+                                ${LANG_META[lang].rtl ? 'font-serif text-2xl leading-relaxed' : 'text-sm font-medium leading-relaxed'}
+                              `}
+                              rows={3}
+                              placeholder={`Enter ${LANG_META[lang].label} text here...`}
+                            />
+                            <div className="flex flex-wrap gap-2 px-2">
+                              {tokens[lang].map((t, i) => (
+                                <span key={i} className={`px-2.5 py-1.5 rounded-xl border flex items-center gap-2 transition-all opacity-80 hover:opacity-100 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                                  <span className="text-[8px] font-black uppercase text-indigo-500/50">{i}</span>
+                                  <span className={`${LANG_META[lang].rtl ? 'font-serif text-sm' : 'text-[11px] font-bold'}`}>{t}</span>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </motion.div>
                       )}
-                    </div>
-                    <textarea
-                      value={inputs[lang]}
-                      onChange={e => setInputs(prev => ({ ...prev, [lang]: e.target.value }))}
-                      dir={LANG_META[lang].rtl ? 'rtl' : 'ltr'}
-                      className={`w-full p-5 rounded-[2rem] border focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all resize-none shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white focus:border-indigo-500 placeholder:text-slate-700' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-400 placeholder:text-slate-300'}
-                        ${LANG_META[lang].rtl ? 'font-serif text-2xl leading-relaxed' : 'text-sm font-medium leading-relaxed'}
-                      `}
-                      rows={3}
-                      placeholder={`Enter ${LANG_META[lang].label} text here...`}
-                    />
-                    <div className="flex flex-wrap gap-2 px-2">
-                      {tokens[lang].map((t, i) => (
-                        <span key={i} className={`px-2.5 py-1.5 rounded-xl border flex items-center gap-2 transition-all opacity-80 hover:opacity-100 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
-                          <span className="text-[8px] font-black uppercase text-indigo-500/50">{i}</span>
-                          <span className={`${LANG_META[lang].rtl ? 'font-serif text-sm' : 'text-[11px] font-bold'}`}>{t}</span>
-                        </span>
-                      ))}
-                    </div>
+                    </AnimatePresence>
                   </div>
                 ))}
       
                 <div className="pt-8 border-t border-slate-100 dark:border-slate-800">
-                  <div className="flex items-center justify-between mb-6">
-                    <div>
-                      <h3 className="text-xs font-black uppercase text-slate-800 dark:text-white tracking-[0.1em]">Relational word mapping</h3>
-                      <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase">Synchronize translations</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                    <button 
-                      onClick={handleAutoMap}
-                      disabled={!!aiProcessing}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800 rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-all disabled:opacity-50"
-                    >
-                      {aiProcessing === 'mapping' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                      {aiProcessing === 'mapping' ? 'AI Mapping' : 'Auto Map'}
-                    </button>
-                    <button 
-                      onClick={syncOttomanTurkish}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800 rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all"
-                    >
-                      <Link2 className="w-3.5 h-3.5" />
-                      Link OT-TR
-                    </button>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    {wordMaps.map((map, i) => (
-                      <div key={i} className={`flex items-center gap-4 p-4 rounded-2xl border transition-all ${isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-slate-50 border-slate-200'} group`}>
-                        <div className="flex-1 grid grid-cols-3 gap-3">
-                        {(['ottoman', 'sorani', 'turkish'] as Language[]).map((l) => {
-                          return (
-                            <div key={l} className="space-y-1.5 text-center">
-                              <label className="text-[7px] font-black uppercase text-slate-400 dark:text-slate-600 tracking-tighter">{l}</label>
-                              <input
-                                type="number"
-                                placeholder="—"
-                                value={map[l] ?? ''}
-                                onChange={e => {
-                                  const val = e.target.value === '' ? null : parseInt(e.target.value);
-                                  setWordMaps(prev => {
-                                    const next = [...prev];
-                                    next[i] = { ...next[i], [l]: val };
-                                    return next;
-                                  });
-                                }}
-                                className={`w-full p-2 text-center text-xs font-black rounded-lg border transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-400'}`}
-                              />
-                            </div>
-                          );
-                        })}
-                        </div>
-                        <button 
-                          onClick={() => setWordMaps(prev => prev.filter((_, idx) => idx !== i))}
-                          className="p-2 text-slate-300 dark:text-slate-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  
-                  <button 
-                    onClick={() => setWordMaps(prev => [...prev, { ottoman: null, sorani: null, turkish: null }])}
-                    className="mt-6 w-full py-4 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-slate-400 dark:text-slate-500 text-[10px] font-black hover:border-indigo-400 dark:hover:border-indigo-800 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all uppercase tracking-[0.2em] bg-transparent"
+                  <div 
+                    className="flex items-center justify-between mb-6 cursor-pointer group/header"
+                    onClick={() => setIsMappingExpanded(!isMappingExpanded)}
                   >
-                    + Append alignment row
-                  </button>
+                    <div className="flex items-center gap-4">
+                      <div className={`p-2 rounded-xl transition-all ${isMappingExpanded ? 'bg-indigo-600 text-white animate-pulse' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600'}`}>
+                        <TableIcon className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-black uppercase text-slate-800 dark:text-white tracking-[0.1em] flex items-center gap-2">
+                          Relational word mapping
+                          <motion.div animate={{ rotate: isMappingExpanded ? 180 : 0 }}>
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </motion.div>
+                        </h3>
+                        <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase">Synchronize translations — {wordMaps.length} active links</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                      <button 
+                        onClick={handleAutoMap}
+                        disabled={!!aiProcessing}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800 rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-all disabled:opacity-50"
+                      >
+                        {aiProcessing === 'mapping' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                        {aiProcessing === 'mapping' ? 'AI Mapping' : 'Auto Map'}
+                      </button>
+                      <button 
+                        onClick={syncOttomanTurkish}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800 rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all"
+                      >
+                        <Link2 className="w-3.5 h-3.5" />
+                        Link OT-TR
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <AnimatePresence>
+                    {isMappingExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className={`rounded-[1.5rem] border overflow-hidden ${isDarkMode ? 'bg-slate-900/40 border-slate-700/50' : 'bg-slate-50/50 border-slate-100'}`}>
+                          <div className="grid grid-cols-4 gap-0 text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-600 border-b border-slate-100 dark:border-slate-800/50">
+                            <div className="p-3 text-center border-r border-slate-100 dark:border-slate-800/50">Ottoman</div>
+                            <div className="p-3 text-center border-r border-slate-100 dark:border-slate-800/50">Sorani</div>
+                            <div className="p-3 text-center border-r border-slate-100 dark:border-slate-800/50">Turkish</div>
+                            <div className="p-3 text-center">Action</div>
+                          </div>
+                          
+                          <div className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                            {wordMaps.map((map, i) => (
+                              <div key={i} className="grid grid-cols-4 gap-0 group/row hover:bg-white dark:hover:bg-slate-800/50 transition-colors">
+                                {(['ottoman', 'sorani', 'turkish'] as Language[]).map((l) => (
+                                  <div key={l} className="p-2 border-r border-slate-100 dark:border-slate-800/50">
+                                    <input
+                                      type="number"
+                                      placeholder="—"
+                                      value={map[l] ?? ''}
+                                      onChange={e => {
+                                        const val = e.target.value === '' ? null : parseInt(e.target.value);
+                                        setWordMaps(prev => {
+                                          const next = [...prev];
+                                          next[i] = { ...next[i], [l]: val };
+                                          return next;
+                                        });
+                                      }}
+                                      className={`w-full bg-transparent p-1.5 text-center text-[11px] font-black outline-none focus:text-indigo-600 transition-colors ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}
+                                    />
+                                  </div>
+                                ))}
+                                <div className="p-2 flex items-center justify-center">
+                                  <button 
+                                    onClick={() => setWordMaps(prev => prev.filter((_, idx) => idx !== i))}
+                                    className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          
+                          <button 
+                            onClick={() => setWordMaps(prev => [...prev, { ottoman: null, sorani: null, turkish: null }])}
+                            className={`w-full py-3 text-[9px] font-black uppercase tracking-[0.15em] border-t border-slate-100 dark:border-slate-800/50 transition-all ${isDarkMode ? 'text-slate-500 hover:text-indigo-400 hover:bg-slate-800/50' : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50/50'}`}
+                          >
+                            + Append new alignment row
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
             </div>
