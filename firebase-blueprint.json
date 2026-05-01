@@ -5,6 +5,14 @@
       "description": "A parallel sentence entry in three languages with word alignment.",
       "type": "object",
       "properties": {
+        "bookId": {
+          "type": "string",
+          "description": "ID of the book section (e.g., sozler)"
+        },
+        "itemId": {
+          "type": "string",
+          "description": "ID of the specific item in the book (e.g., first-word)"
+        },
         "ottoman": {
           "type": "array",
           "description": "Array of words in Ottoman Turkish"
@@ -26,12 +34,17 @@
           "format": "date-time",
           "description": "Timestamp of creation"
         },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of last update"
+        },
         "authorId": {
           "type": "string",
           "description": "UID of the user who added this entry"
         }
       },
-      "required": ["ottoman", "sorani", "turkish", "wordMap"]
+      "required": ["bookId", "itemId", "ottoman", "sorani", "turkish", "wordMap"]
     }
   },
   "firestore": {

@@ -31,8 +31,10 @@ service cloud.firestore {
     // --- Validation Blueprints ---
 
     function isValidSentence(data) {
-      return data.keys().hasAll(['ottoman', 'sorani', 'turkish', 'wordMap', 'authorId', 'createdAt'])
-        && data.keys().size() == 6
+      return data.keys().hasAll(['bookId', 'itemId', 'ottoman', 'sorani', 'turkish', 'wordMap', 'authorId', 'createdAt'])
+        && (data.keys().size() == 8 || (data.keys().size() == 9 && data.keys().hasAll(['updatedAt'])))
+        && data.bookId is string && data.bookId.size() <= 64
+        && data.itemId is string && data.itemId.size() <= 64
         && data.ottoman is list && data.ottoman.size() <= 500
         && data.sorani is list && data.sorani.size() <= 500
         && data.turkish is list && data.turkish.size() <= 500
@@ -44,7 +46,6 @@ service cloud.firestore {
 
     match /sentences/{sentenceId} {
       // 8. Secure List Queries: Explicitly allow public reading as this is an educational tool.
-      // If we wanted private, we'd add: && resource.data.authorId == request.auth.uid
       allow list: if true; 
       allow get: if true;
 
@@ -52,7 +53,8 @@ service cloud.firestore {
         && isValidId(sentenceId)
         && isValidSentence(incoming())
         && incoming().authorId == request.auth.uid
-        && incoming().createdAt == request.time;
+        && incoming().createdAt == request.time
+        && incoming().keys().size() == 8; // No updatedAt on create
 
       allow update: if isSignedIn()
         && isValidId(sentenceId)
@@ -60,9 +62,10 @@ service cloud.firestore {
         && isValidSentence(incoming())
         && incoming().authorId == existing().authorId
         && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
         && (
-          // Action: Edit content
-          incoming().diff(existing()).affectedKeys().hasOnly(['ottoman', 'sorani', 'turkish', 'wordMap'])
+          // Action: Edit content or metadata
+          incoming().diff(existing()).affectedKeys().hasOnly(['ottoman', 'sorani', 'turkish', 'wordMap', 'bookId', 'itemId', 'updatedAt'])
         );
 
       allow delete: if isSignedIn() && isOwner(existing());
