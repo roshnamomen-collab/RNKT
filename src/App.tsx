@@ -63,11 +63,22 @@ import {
 import { GoogleGenAI, Type as aiType } from "@google/genai";
 
 // --- AI Service ---
-const aiApiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-const genAI = new GoogleGenAI({ apiKey: aiApiKey });
+const getApiKey = () => {
+  try {
+    return import.meta.env.VITE_GEMINI_API_KEY || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '');
+  } catch {
+    return '';
+  }
+};
+
+const aiApiKey = getApiKey();
+const genAI = aiApiKey ? new GoogleGenAI({ apiKey: aiApiKey }) : null;
 const ai = genAI;
 
 const translateToSorani = async (ottoman: string) => {
+  if (!ai) {
+    throw new Error('Gemini API Key is not configured. Please add VITE_GEMINI_API_KEY to your Netlify environment variables.');
+  }
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: `Translate the following Ottoman Turkish sentence from Risale-i Nur into Sorani Kurdish. 
